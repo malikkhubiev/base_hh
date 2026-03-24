@@ -7,7 +7,7 @@ router = APIRouter()
 
 @router.get("/", response_class=HTMLResponse)
 def index() -> str:
-    # Single-file UI for easy debugging.
+    # Встроенный single-file UI для локальной отладки пайплайна.
     return """
 <!DOCTYPE html>
 <html lang="ru">
@@ -157,7 +157,7 @@ def index() -> str:
       </div>
 
       <div id="status" class="subtitle"></div>
-      <div id="tokenInfo" class="subtitle" style="color:#000;">Ключ: SSP SOFT (по умолчанию)</div>
+      <div id="tokenInfo" class="subtitle" style="color:#000;">Ключ: SSP</div>
 
       <div id="promptBlock" class="llm" style="display:none;">
         <div class="label subtitle" style="color:#000;">system prompt (редактируемый)</div>

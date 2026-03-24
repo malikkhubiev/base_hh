@@ -15,16 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 class HHClient:
-    """Client for HH API token retrieval and resume search."""
+    """Клиент HH API для получения токена и поиска резюме."""
 
     def __init__(
         self,
         token_url: str = "http://int-srv:8085/metrics/hh/accessToken",
         file_manager: FileManager | None = None,
-        token_source: str = "ssp_soft",
-        oauth_token_url: str = "https://hh.ru/oauth/token",
-        base_client_id: str | None = None,
-        base_client_secret: str | None = None,
+        token_source: str = "ssp",
     ) -> None:
         self.token_url = token_url
         self.token: str | None = None
@@ -32,37 +29,13 @@ class HHClient:
         self.fm = file_manager
         self.search_counter = 0
         self.token_source = token_source
-        self.oauth_token_url = oauth_token_url
-        self.base_client_id = base_client_id
-        self.base_client_secret = base_client_secret
 
     def get_token(self) -> str:
-        """Retrieve API token from configured source."""
-        if self.token_source == "base":
-            if not self.base_client_id or not self.base_client_secret:
-                raise ValueError("BASE credentials are empty")
-            response = requests.post(
-                self.oauth_token_url,
-                data={
-                    "grant_type": "client_credentials",
-                    "client_id": self.base_client_id,
-                    "client_secret": self.base_client_secret,
-                },
-                timeout=15,
-            )
-            response.raise_for_status()
-            payload = response.json()
-            token = payload.get("access_token")
-            if not token:
-                raise ValueError(f"No access_token in OAuth response: {payload}")
-            self.token = token
-            logger.info("HH token received from OAuth source")
-            return self.token
-
+        """Получаем API-токен HH из SSP-эндпоинта."""
         response = requests.get(self.token_url, timeout=10)
         response.raise_for_status()
         self.token = response.content.decode("utf-8")
-        logger.info("HH token received from SSP source")
+        logger.info("HH token received from SSP source: %s", self.token_source)
         return self.token
 
     def _build_api_params(self, query: str, filters: dict[str, Any] | None, per_page: int) -> dict[str, Any]:
@@ -101,7 +74,7 @@ class HHClient:
         level_name: str = "",
         iteration: int = 0,
     ) -> int:
-        """Search resumes and return HH found count."""
+        """Выполняем поиск резюме и возвращаем число найденных."""
         if not self.token:
             self.get_token()
         headers = {"Authorization": f"Bearer {self.token}"}
@@ -152,7 +125,7 @@ class HHClient:
         level_name: str = "",
         iteration: int = 0,
     ) -> str | None:
-        """Save compact result metadata to logs directory."""
+        """Сохраняем компактный файл с метаданными результатов в logs."""
         try:
             self.search_counter += 1
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -232,7 +205,7 @@ class HHClient:
             return None
 
     def get_resume_by_id(self, resume_id: str) -> dict[str, Any] | None:
-        """Fetch full resume details by resume ID."""
+        """Получаем полную карточку резюме по ID."""
         if not self.token:
             self.get_token()
         headers = {"Authorization": f"Bearer {self.token}"}

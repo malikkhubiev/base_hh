@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 LevelName = Literal["Уровень 1", "Уровень 2", "Уровень 3"]
-TokenSource = Literal["ssp_soft", "base"]
+TokenSource = Literal["ssp"]
 
 
 class GenerateQueriesRequest(BaseModel):
@@ -32,14 +32,13 @@ class Candidate(BaseModel):
     employer: Any | None = None
     salary: Any | None = None
     experience: Any | None = None
-    skills: list[Any] = []
-    tags: list[Any] = []
+    skills: list[Any] = Field(default_factory=list)
+    tags: list[Any] = Field(default_factory=list)
 
 
 class SearchRequest(BaseModel):
     request_text: str
     selected_level: LevelName = "Уровень 2"
-    token_source: TokenSource = "ssp_soft"
 
     area_id: int | None = None
     professional_roles: list[str] | None = None

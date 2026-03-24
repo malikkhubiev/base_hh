@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class QueryGenerator:
-    """Generate boolean queries for 3 levels via LLM."""
+    """Генерирует булевы запросы трех уровней через LLM."""
 
     def __init__(self, llm_url: str, llm_token_param: str, txt_folder: str = "txt", output_folder: str = "logs"):
         self.fm = FileManager(txt_folder=txt_folder, output_folder=output_folder)
@@ -33,13 +33,13 @@ class QueryGenerator:
         return f"{system_prompt}\n\n{user_prompt}"
 
     def _fallback_queries(self, request_text: str) -> dict[str, str]:
-        # Heuristic: grab key tech words; keep it intentionally simple.
+        # Простая эвристика: берем ключевые слова из текста вакансии.
         keywords = []
         for line in request_text.splitlines():
             line = line.strip()
             if not line:
                 continue
-            # take first "word-like" token chunk
+            # Берем первую смысловую часть до скобок.
             keywords.append(line.split("(")[0].strip(" ;."))
         base = "Python"
         tail = " OR ".join([k for k in keywords if k and "Python" not in k][:20])
@@ -78,12 +78,12 @@ class QueryGenerator:
         if not queries:
             return self._fallback_queries(request_text), llm_raw
 
-        # Normalize: ensure 3 keys exist
+        # Нормализация: гарантируем наличие всех трех уровней.
         for k in ["Уровень 1", "Уровень 2", "Уровень 3"]:
             if k not in queries:
                 queries[k] = queries.get("Уровень 2") or queries.get("Уровень 1") or "Python"
 
-        # Ensure values are strings
+        # Приводим значения к строкам для стабильного контракта API.
         safe: dict[str, str] = {}
         for k, v in queries.items():
             safe[k] = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)

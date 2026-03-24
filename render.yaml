@@ -9,8 +9,6 @@ services:
     envVars:
       - key: LOG_LEVEL
         value: INFO
-      - key: DEFAULT_TOKEN_SOURCE
-        value: ssp_soft
       - key: USE_MOCK_LLM
         value: "false"
       - key: USE_MOCK_HH

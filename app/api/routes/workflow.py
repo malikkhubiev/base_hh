@@ -64,13 +64,11 @@ def search(payload: SearchRequest):
         mock=payload.mock_llm or settings.use_mock_llm,
     )
 
-    token_source = settings.default_token_source
+    # В проекте используется единственный источник токена: SSP.
+    token_source = settings.token_source
     hh = HHSearchService(
         token_url=settings.hh_token_url,
         token_source=token_source,
-        oauth_token_url=settings.hh_oauth_token_url,
-        base_client_id=settings.base_client_id,
-        base_client_secret=settings.base_client_secret,
     )
     found_counts, candidates_by_level_raw, full_queries = hh.search_counts_and_candidates(
         queries,
@@ -80,7 +78,7 @@ def search(payload: SearchRequest):
         mock=payload.mock_hh or settings.use_mock_hh,
     )
 
-    # Normalize candidates to a thin useful shape for UI.
+    # Нормализуем ответ HH до стабильной структуры для UI.
     candidates_by_level = {}
     for level, items in candidates_by_level_raw.items():
         norm = []
@@ -102,7 +100,7 @@ def search(payload: SearchRequest):
                     "experience": it.get("experience"),
                     "skills": it.get("skills") if isinstance(it.get("skills"), list) else [],
                     "tags": it.get("tags") if isinstance(it.get("tags"), list) else [],
-                    # sometimes HH raw item may include names; keep if present
+                    # В некоторых ответах HH приходят имя/фамилия отдельными полями.
                     "first_name": it.get("first_name"),
                     "last_name": it.get("last_name"),
                 }
