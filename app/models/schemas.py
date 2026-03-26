@@ -39,6 +39,7 @@ class Candidate(BaseModel):
 class SearchRequest(BaseModel):
     request_text: str
     selected_level: LevelName = "Уровень 2"
+    candidates_limit: int = Field(20, ge=1, le=200, description="Кол-во кандидатов в таблице")
 
     area_id: int | None = None
     professional_roles: list[str] | None = None
@@ -57,4 +58,40 @@ class SearchResponse(BaseModel):
     selected_level: LevelName
     token_source_used: TokenSource
     candidates_by_level: dict[LevelName, list[Candidate]]
+
+
+class TrafficLightRequirement(BaseModel):
+    requirement: str
+    resume_evidence: str
+    match_percent: int = Field(ge=0, le=100)
+    difference_comment: str
+
+
+class TrafficLightCandidate(BaseModel):
+    id: str
+    candidate_name: str
+    title: str | None = None
+    location: str | None = None
+    resume_url: str | None = None
+    color_score_percent: int = Field(ge=0, le=100)
+    requirements: list[TrafficLightRequirement]
+
+    # Debug fields: нужны, чтобы выяснять, почему "Светофор" пустой.
+    # Показываем в UI итоговый промпт, который отправили в LLM, и raw-ответ LLM.
+    candidate_prj_exp: str | None = None
+    debug_prompt: str | None = None
+    debug_llm_raw: Any | None = None
+
+
+class SvetoforResponse(BaseModel):
+    llm_raw: Any | None = None
+    queries: dict[LevelName, str]
+    queries_with_exclusions: dict[LevelName, str]
+    found_counts: dict[LevelName, int]
+    selected_level: LevelName
+    token_source_used: TokenSource
+    candidates_by_level: dict[LevelName, list[Candidate]]
+
+    # Кандидаты, отсортированные по ColorScore (пока для теста может быть <= 1).
+    traffic_light_candidates: list[TrafficLightCandidate]
 

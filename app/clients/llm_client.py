@@ -17,12 +17,12 @@ class LLMClient:
         self.llm_url = llm_url
         self.token_param = token_param
 
-    def call(self, prompt_text: str, iteration: int | None = None, temperature: float = 0.3) -> dict[str, Any] | None:
+    def call(self, prompt_text: str, model="ChatGPT\\gpt-4o-mini", iteration: int | None = None, temperature: float = 0.0) -> dict[str, Any] | None:
         """Send request to LLM and return parsed JSON payload."""
         request_data = {
             "requestUser": "system",
             "promptName": "HH Search Optimizer",
-            "promptModel": "ChatGPT\\gpt-4o-mini",
+            "promptModel": model,
             "promptText": prompt_text,
             "temperature": str(temperature),
         }

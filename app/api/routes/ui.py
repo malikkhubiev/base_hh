@@ -127,6 +127,43 @@ def index() -> str:
     td { font-size: 15px; }
     a { color: #000; }
 
+    .tl-rect {
+      min-width: 56px;
+      height: 30px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #000;
+      font-weight: 700;
+      cursor: pointer;
+      user-select: none;
+      padding: 0 8px;
+    }
+
+    .tl-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.35);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 9999;
+    }
+    .tl-modal {
+      width: 100%;
+      max-width: 1200px;
+      background: #fff;
+      border: 1px solid #888;
+      padding: 14px;
+      max-height: 85vh;
+      overflow: auto;
+    }
+
+    .tl-modal table th, .tl-modal table td {
+      border-color: #666 !important;
+    }
+
     @media (max-width: 900px) {
       .grid3 { grid-template-columns: 1fr; }
       .title { font-size: 2.4rem; }
@@ -153,6 +190,11 @@ def index() -> str:
         <button class="secondary" id="btnDefault">Запрос по умолчанию</button>
         <button class="secondary" id="btnBool">Получить булевый запрос</button>
         <button id="btnSearch">Поиск</button>
+        <button id="btnSvetofor">Светофор</button>
+        <label class="pill">
+          Кол-во кандидатов в таблице
+          <input type="number" id="candLimit" value="20" min="1" max="200" />
+        </label>
         <label class="pill"><input type="checkbox" id="showPrompt" /> показать промпт</label>
       </div>
 
@@ -194,6 +236,69 @@ def index() -> str:
             <tbody id="candTbody"></tbody>
           </table>
         </div>
+
+        <div class="divider"></div>
+        <div id="trafficLightBlock" style="display:none;">
+          <div class="subtitle">Светофор (ColorScore)</div>
+          <div style="overflow:auto; margin-top:10px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Кандидат</th>
+                  <th>Локация</th>
+                  <th>Позиция</th>
+                </tr>
+              </thead>
+              <tbody id="tlTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tlModalBackdrop" class="tl-modal-backdrop">
+    <div id="tlModal" class="tl-modal">
+      <div class="row" style="justify-content:space-between; align-items:center; gap:14px;">
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div class="subtitle" id="tlModalTitle"></div>
+          <div id="tlModalStatusCircle" title="Итоговый ColorScore" style="width:24px; height:24px; border-radius:50%; background:#ddf8e7; border:2px solid #0b8a3a; display:flex; align-items:center; justify-content:center; font-weight:800;">✓</div>
+        </div>
+        <button id="tlModalClose" class="secondary" type="button">✕</button>
+      </div>
+      <div class="divider"></div>
+      <div class="row" style="justify-content:flex-end; gap:10px; margin-top:6px; margin-bottom:10px;">
+        <button id="tlModalPromptBtn" class="secondary" type="button">Промпт</button>
+        <button id="tlModalAgentRespBtn" class="secondary" type="button">Ответ агента</button>
+      </div>
+
+      <div id="tlModalTableWrap" style="overflow:auto; max-height:65vh;">
+        <table>
+          <thead>
+            <tr>
+              <th>Запрос</th>
+              <th>Резюме</th>
+              <th>Цвет</th>
+              <th>Несоответствие</th>
+            </tr>
+          </thead>
+          <tbody id="tlModalTbody"></tbody>
+        </table>
+      </div>
+
+      <div id="tlModalProjectExpWrap" class="llm" style="display:none; overflow:auto; max-height:65vh;">
+        <div class="subtitle" style="color:#000; margin-bottom:10px;">Проектный опыт (то, что подставляем в промпт)</div>
+        <pre id="tlModalProjectExpText" class="mono" style="white-space:pre-wrap; font-size:13px; margin:0;"></pre>
+      </div>
+
+      <div id="tlModalPromptWrap" class="llm" style="display:none; overflow:auto; max-height:65vh;">
+        <div class="subtitle" style="color:#000; margin-bottom:10px;">Итоговый промпт (отправляется LLM)</div>
+        <pre id="tlModalPromptText" class="mono" style="white-space:pre-wrap; font-size:13px; margin:0;"></pre>
+      </div>
+
+      <div id="tlModalAgentRespWrap" class="llm" style="display:none; overflow:auto; max-height:65vh;">
+        <div class="subtitle" style="color:#000; margin-bottom:10px;">Ответ агента (raw)</div>
+        <pre id="tlModalAgentRespText" class="mono" style="white-space:pre-wrap; font-size:13px; margin:0;"></pre>
       </div>
     </div>
   </div>
@@ -207,6 +312,7 @@ def index() -> str:
     selectedLevel: "Уровень 2",
     systemPromptLoaded: false,
     userPromptLoaded: false,
+    trafficLightById: null,
   };
 
   function setStatus(text) { el("status").textContent = text || ""; }
@@ -214,6 +320,10 @@ def index() -> str:
     el("btnDefault").disabled = b;
     el("btnBool").disabled = b;
     el("btnSearch").disabled = b;
+    const tlBtn = el("btnSvetofor");
+    if (tlBtn) tlBtn.disabled = b;
+    const candT = el("candLimit");
+    if (candT) candT.disabled = b;
     const promptT = el("systemPromptText");
     if (promptT) promptT.disabled = b;
     const userPromptT = el("userPromptText");
@@ -229,6 +339,181 @@ def index() -> str:
     if (!el("showPrompt").checked) return null;
     return el("userPromptText").value;
   }
+
+  function getCandidatesLimit() {
+    const t = el("candLimit");
+    const v = t ? Number(t.value) : 20;
+    if (!Number.isFinite(v) || v <= 0) return 20;
+    return Math.min(200, Math.max(1, v));
+  }
+
+  function tlColorForScore(score) {
+    const s = Number(score ?? 0);
+    if (s >= 60) return "#ddf8e7";
+    if (s >= 40) return "#feeac3";
+    return "rgba(255,120,117,.3)";
+  }
+
+  function tlColorForMatch(match) {
+    const m = Number(match ?? 0);
+    if (m >= 70) return "#ddf8e7";
+    if (m >= 30) return "#feeac3";
+    return "rgba(255,120,117,.3)";
+  }
+
+  function renderTrafficLightTable(items) {
+    const block = el("trafficLightBlock");
+    const tbody = el("tlTbody");
+    state.trafficLightById = {};
+    tbody.innerHTML = "";
+
+    const list = Array.isArray(items) ? items : [];
+    block.style.display = list.length ? "block" : "none";
+
+    list.forEach((c) => {
+      const id = String(c.id ?? "");
+      const score = Number(c.color_score_percent ?? 0);
+      const rectBg = tlColorForScore(score);
+      const circleBorder = score >= 60 ? "#0b8a3a" : (score >= 40 ? "#d9b000" : "#ff4d4d");
+      const resumeUrl = c.resume_url || c.resumeUrl || "";
+      const candidateName = c.candidate_name ?? "";
+      const location = c.location ?? "";
+      const position = c.title ?? "";
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <div class="tl-rect" style="background:${rectBg}; border-color:${circleBorder};" title="ColorScore">
+              <div class="mono" style="font-size:16px; line-height:1;">${escapeHtml(String(score))}%</div>
+              <div style="width:18px; height:18px; border-radius:50%; border:2px solid ${circleBorder}; background:${rectBg};"></div>
+            </div>
+            ${resumeUrl ? `<span class="mono" data-open-resume="1" title="Открыть HH" style="color:#1e73ff; font-size:22px; cursor:pointer; line-height:1;">→</span>` : ""}
+            <button
+              class="secondary"
+              type="button"
+              data-open-prj-exp="1"
+              style="padding:8px 10px; font-size:12px; text-transform:none; letter-spacing:0; line-height:1; cursor:pointer;"
+              title="Показать проектный опыт, который подставляется в промпт"
+            >
+              Открыть проектный опыт
+            </button>
+            <span class="mono">${escapeHtml(candidateName || id)}</span>
+          </div>
+        </td>
+        <td>${escapeHtml(location)}</td>
+        <td>${escapeHtml(position)}</td>
+      `;
+
+      const rect = tr.querySelector(".tl-rect");
+      rect.onclick = () => openTrafficLightModal(c, "table");
+
+      const openResumeEl = tr.querySelector('[data-open-resume="1"]');
+      if (openResumeEl) {
+        openResumeEl.onclick = (e) => {
+          e.stopPropagation();
+          if (!resumeUrl) return;
+          window.open(resumeUrl, "_blank", "noopener,noreferrer");
+        };
+      }
+
+      const openPrjExpEl = tr.querySelector('[data-open-prj-exp="1"]');
+      if (openPrjExpEl) {
+        openPrjExpEl.onclick = (e) => {
+          e.stopPropagation();
+          openTrafficLightModal(c, "projectExp");
+        };
+      }
+      state.trafficLightById[id] = c;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function showTlModalTab(tab) {
+    const tableWrap = el("tlModalTableWrap");
+    const projectExpWrap = el("tlModalProjectExpWrap");
+    const promptWrap = el("tlModalPromptWrap");
+    const agentRespWrap = el("tlModalAgentRespWrap");
+
+    if (tableWrap) tableWrap.style.display = tab === "table" ? "block" : "none";
+    if (projectExpWrap) projectExpWrap.style.display = tab === "projectExp" ? "block" : "none";
+    if (promptWrap) promptWrap.style.display = tab === "prompt" ? "block" : "none";
+    if (agentRespWrap) agentRespWrap.style.display = tab === "agentResponse" ? "block" : "none";
+  }
+
+  function openTrafficLightModal(c, initialTab = "table") {
+    const backdrop = el("tlModalBackdrop");
+    const title = el("tlModalTitle");
+    const tbody = el("tlModalTbody");
+    const statusCircle = el("tlModalStatusCircle");
+    const projectExpTextEl = el("tlModalProjectExpText");
+    const promptTextEl = el("tlModalPromptText");
+    const agentRespTextEl = el("tlModalAgentRespText");
+
+    const candidateName = c?.candidate_name ?? c?.id ?? "";
+    const titleText = c?.title ? `${candidateName} — ${c.title}` : candidateName;
+    title.textContent = titleText;
+
+    if (statusCircle) {
+      const score = Number(c?.color_score_percent ?? 0);
+      const bg = tlColorForScore(score);
+      const borderColor = score >= 60 ? "#0b8a3a" : (score >= 40 ? "#d9b000" : "#ff4d4d");
+      statusCircle.style.background = bg;
+      statusCircle.style.border = `2px solid ${borderColor}`;
+    }
+
+    const reqs = Array.isArray(c?.requirements) ? c.requirements : [];
+    tbody.innerHTML = "";
+    reqs.forEach((it) => {
+      const mp = Number(it.match_percent ?? 0);
+      const color = tlColorForMatch(mp);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(it.requirement ?? "")}</td>
+        <td>${escapeHtml(it.resume_evidence ?? "")}</td>
+        <td>
+          <div style="background:${color}; padding:6px; border:1px solid #000; width:100px; text-align:center;">
+            ${escapeHtml(String(mp))}%
+          </div>
+        </td>
+        <td>${escapeHtml(it.difference_comment ?? "")}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    if (projectExpTextEl) {
+      projectExpTextEl.textContent = String(c?.candidate_prj_exp ?? "");
+    }
+    if (promptTextEl) {
+      promptTextEl.textContent = String(c?.debug_prompt ?? "");
+    }
+    if (agentRespTextEl) {
+      const raw = c?.debug_llm_raw ?? null;
+      if (raw === null || raw === undefined) {
+        agentRespTextEl.textContent = "";
+      } else {
+        try {
+          agentRespTextEl.textContent = typeof raw === "string" ? raw : JSON.stringify(raw, null, 2);
+        } catch (e) {
+          agentRespTextEl.textContent = String(raw);
+        }
+      }
+    }
+
+    showTlModalTab(initialTab);
+    backdrop.style.display = "flex";
+  }
+
+  // Close modal handlers
+  el("tlModalClose").onclick = () => { el("tlModalBackdrop").style.display = "none"; };
+  el("tlModalPromptBtn").onclick = () => showTlModalTab("prompt");
+  el("tlModalAgentRespBtn").onclick = () => showTlModalTab("agentResponse");
+  el("tlModalBackdrop").onclick = (e) => {
+    if (e?.target === el("tlModalBackdrop")) el("tlModalBackdrop").style.display = "none";
+  };
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") el("tlModalBackdrop").style.display = "none";
+  });
 
   function renderQueries(queries) {
     const q = el("queries");
@@ -460,6 +745,10 @@ def index() -> str:
       }
       renderQueries(data.queries);
       el("results").style.display = "none";
+      el("trafficLightBlock").style.display = "none";
+      const tbody = el("tlTbody");
+      if (tbody) tbody.innerHTML = "";
+      state.trafficLightById = null;
       setStatus("Готово.");
     } catch (e) {
       setStatus("Ошибка: " + e.message);
@@ -473,6 +762,7 @@ def index() -> str:
       const data = await api("/api/search", {
         request_text: requestText,
         selected_level: state.selectedLevel,
+        candidates_limit: getCandidatesLimit(),
         system_prompt_override: getSystemPromptOverride(),
         user_prompt_override: getUserPromptOverride(),
       });
@@ -490,7 +780,42 @@ def index() -> str:
       renderLevelPicker(state.foundCounts);
       el("results").style.display = "block";
       renderCandidates();
+      renderTrafficLightTable([]);
 
+      setStatus("Готово.");
+    } catch (e) {
+      setStatus("Ошибка: " + e.message);
+    } finally { setBusy(false); }
+  };
+
+  el("btnSvetofor").onclick = async () => {
+    const requestText = el("requestText").value.trim();
+    setBusy(true); setStatus("Светофор: LLM → HH → LLM...");
+    try {
+      const data = await api("/api/svetofor", {
+        request_text: requestText,
+        selected_level: state.selectedLevel,
+        candidates_limit: getCandidatesLimit(),
+        system_prompt_override: getSystemPromptOverride(),
+        user_prompt_override: getUserPromptOverride(),
+      });
+      if (data.llm_raw) {
+        el("llmRaw").textContent = JSON.stringify(data.llm_raw, null, 2);
+        el("llmBlock").style.display = "block";
+      } else {
+        el("llmBlock").style.display = "none";
+      }
+
+      renderQueries(data.queries);
+      state.candidatesByLevel = data.candidates_by_level;
+      state.foundCounts = data.found_counts;
+      state.selectedLevel = pickBestLevelByCandidates();
+
+      renderLevelPicker(state.foundCounts);
+      el("results").style.display = "block";
+      renderCandidates();
+
+      renderTrafficLightTable(data.traffic_light_candidates || []);
       setStatus("Готово.");
     } catch (e) {
       setStatus("Ошибка: " + e.message);
