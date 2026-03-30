@@ -184,6 +184,12 @@ def index() -> str:
         <div class="title">Поиск резюме (LLM → булевы → HH)</div>
       </div>
 
+      <div class="row" style="justify-content: flex-end;">
+        <button id="btnOpenBot" class="secondary" type="button" title="Открыть UI бота (/ui/bot)">
+          HH Чат
+        </button>
+      </div>
+
       <textarea id="requestText" placeholder="Вставьте запрос/требования..."></textarea>
 
       <div class="row">
@@ -224,8 +230,6 @@ def index() -> str:
       <div id="status" class="subtitle"></div>
       <div id="progressStage" class="subtitle" style="color:#333;"></div>
       <div id="progressTimes" class="subtitle" style="color:#333;"></div>
-      <div id="tokenInfo" class="subtitle" style="color:#000;">Ключ: SSP</div>
-
       <div id="promptBlock" class="llm" style="display:none;">
         <div class="label subtitle" style="color:#000;">system prompt (редактируемый)</div>
         <textarea id="systemPromptText" class="prompt-editor" placeholder="Здесь можно отредактировать system prompt"></textarea>
@@ -250,6 +254,7 @@ def index() -> str:
           <table>
             <thead>
               <tr>
+                <th>Написать</th>
                 <th>Имя/ID</th>
                 <th>Позиция</th>
                 <th>Локация</th>
@@ -452,7 +457,16 @@ def index() -> str:
               <div class="mono" style="font-size:16px; line-height:1;">${escapeHtml(String(score))}%</div>
               <div style="width:18px; height:18px; border-radius:50%; border:2px solid ${circleBorder}; background:${rectBg};"></div>
             </div>
-            ${resumeUrl ? `<span class="mono" data-open-resume="1" title="Открыть HH" style="color:#1e73ff; font-size:22px; cursor:pointer; line-height:1;">→</span>` : ""}
+            <button
+              class="secondary"
+              type="button"
+              data-write="1"
+              ${resumeUrl ? "" : "disabled"}
+              style="padding:8px 10px; font-size:12px; text-transform:none; letter-spacing:0; line-height:1; cursor:pointer;"
+              title="Написать через страницу бота"
+            >
+              Написать
+            </button>
             <button
               class="secondary"
               type="button"
@@ -462,6 +476,7 @@ def index() -> str:
             >
               Опыт
             </button>
+            ${resumeUrl ? `<span class="mono" data-open-resume="1" title="Открыть HH" style="color:#1e73ff; font-size:22px; cursor:pointer; line-height:1;">→</span>` : ""}
             <span class="mono">${escapeHtml(candidateName || id)}</span>
           </div>
         </td>
@@ -486,6 +501,14 @@ def index() -> str:
         openPrjExpEl.onclick = (e) => {
           e.stopPropagation();
           openTrafficLightModal(c, "projectExp");
+        };
+      }
+      const writeBtn = tr.querySelector('[data-write="1"]');
+      if (writeBtn) {
+        writeBtn.onclick = (e) => {
+          e.stopPropagation();
+          if (!resumeUrl) return;
+          openBotPage(resumeUrl);
         };
       }
       state.trafficLightById[id] = c;
@@ -739,6 +762,18 @@ def index() -> str:
       const salary = c.salary?.amount ? `${c.salary.amount} ${c.salary.currency||""}` : (c.salary ? JSON.stringify(c.salary) : "");
       const tr = document.createElement("tr");
       tr.innerHTML = `
+        <td>
+          <button
+            class="secondary"
+            type="button"
+            data-write="1"
+            ${link ? "" : "disabled"}
+            title="Написать в чат через страницу бота"
+            style="padding:8px 10px; font-size:12px; text-transform:none; letter-spacing:0; line-height:1; cursor:pointer;"
+          >
+            Написать
+          </button>
+        </td>
         <td class="mono">${escapeHtml(c.first_name || c.last_name ? ((c.last_name||"") + " " + (c.first_name||"")).trim() : (c.id||""))}</td>
         <td>${escapeHtml(c.title || "")}</td>
         <td>${escapeHtml(area)}</td>
@@ -746,6 +781,14 @@ def index() -> str:
         <td>${c.age ?? ""}</td>
         <td class="mono">${escapeHtml(salary || "")}</td>
       `;
+      const btnWrite = tr.querySelector('button[data-write="1"]');
+      if (btnWrite) {
+        btnWrite.onclick = (e) => {
+          e.stopPropagation();
+          if (!link) return;
+          openBotPage(link);
+        };
+      }
       tbody.appendChild(tr);
     });
   }
@@ -765,6 +808,18 @@ def index() -> str:
       .replaceAll(">","&gt;")
       .replaceAll('"',"&quot;")
       .replaceAll("'","&#039;");
+  }
+
+  function openBotPage(resumeUrl) {
+    try {
+      const u = String(resumeUrl || "");
+      if (!u) return;
+      // Separate UI page for bot settings + webhook + auto-reply.
+      const target = `/ui/bot?resume_url=${encodeURIComponent(u)}`;
+      window.open(target, "_blank", "noopener,noreferrer");
+    } catch (e) {
+      // ignore
+    }
   }
 
   let progressTimer = null;
@@ -828,6 +883,14 @@ def index() -> str:
     } catch (e) {
       setStatus("Ошибка: " + e.message);
     } finally { setBusy(false); }
+  };
+
+  el("btnOpenBot").onclick = () => {
+    try {
+      window.open("/ui/bot", "_self", "noopener,noreferrer");
+    } catch (e) {
+      // ignore
+    }
   };
 
   el("btnBool").onclick = async () => {
