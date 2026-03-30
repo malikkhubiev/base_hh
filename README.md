@@ -36,7 +36,7 @@
 - `app/core/` — конфигурация и логирование.
 - `app/utils/` — инфраструктурные утилиты (чтение/запись файлов).
 - `txt/` — шаблоны prompt-ов и дефолтный текст запроса.
-- `logs/` — артефакты запусков (raw ответы HH, форматированные результаты).
+- SQLite — хранение результатов поиска HH (без записи JSON-файлов).
 
 ### Поток данных (high level)
 
@@ -45,7 +45,7 @@
 3. `QueryGenerator` собирает prompt из `system_prompt.txt` + `user_prompt.txt` и вызывает `LLMClient.call()`.
 4. `LLMClient.extract_queries()` парсит 3 уровня булевых запросов.
 5. `HHSearchService.search_counts_and_candidates()` строит фильтры HH, добавляет exclusion и для каждого уровня вызывает `HHClient.search()`.
-6. `HHClient` получает токен, вызывает `https://api.hh.ru/resumes`, сохраняет raw/форматированные логи.
+6. `HHClient` получает токен, вызывает `https://api.hh.ru/resumes` и сохраняет компактные результаты поиска в SQLite.
 7. Роут нормализует кандидатов до тонкой DTO-модели и возвращает JSON ответ.
 
 ---
@@ -57,6 +57,7 @@ app/
   main.py
   core/
     logging.py
+    log_store.py
     settings.py
   api/
     router.py
@@ -69,6 +70,7 @@ app/
     prompts.py
     query_generator.py
     hh_search.py
+    job_stability.py
   clients/
     llm_client.py
     hh_client.py
@@ -122,7 +124,8 @@ txt/
   - `selected_level`
   - `area_id` / `professional_roles`
   - `system_prompt_override` / `user_prompt_override`
-  - `mock_llm` / `mock_hh`
+  - (опционально) параметры фильтрации стажа/«прыгуна» и лимит кандидатов для светофора:
+    `min_stay_months`, `allowed_short_jobs`, `jump_mode`, `max_not_employed_months`, `svetofor_top_x`
 - Выход: `SearchResponse`:
   - `llm_raw`, `queries`, `queries_with_exclusions`
   - `found_counts`
@@ -146,14 +149,7 @@ txt/
    - поддерживает несколько форматов (прямой JSON, nested `markdown`, regex fallback);
    - нормализует значения к строкам.
 5. Гарантирует наличие всех 3 ключей (`Уровень 1`, `Уровень 2`, `Уровень 3`).
-6. Если LLM не ответила/ответ не распарсился — включает `_fallback_queries()`.
-
-Алгоритм fallback:
-
-- берет строки из `request_text`,
-- извлекает базовые токены,
-- строит упрощенный запрос вида `Python AND (...)`,
-- дублирует в 3 уровня.
+6. Если LLM не ответила/не распарсился ответ — уровни отдаются пустыми строками; диагностика делается по `llm_raw` в ответе API.
 
 ### 5.2 Поиск в HH (search path)
 
@@ -171,7 +167,7 @@ txt/
 3. Если вакансия не менеджерская — добавляет анти-менеджерскую строку и в `title`:
    - `not (lead and лид and head and руковод* ...)`.
 4. Для каждого уровня вызывает `HHClient.search(...)`.
-5. Читает сохраненный raw JSON и извлекает `items` в `candidates_by_level`.
+5. Получает `items` из ответа HH (компактная форма для UI) и добавляет в `candidates_by_level`.
 6. Возвращает:
    - счетчики найденного,
    - кандидатов по уровням,
@@ -188,10 +184,8 @@ txt/
 2. Собирает параметры API (`text`, `area`, `experience`, `job_search_status`, `period`, и т.д.).
 3. Делает `GET https://api.hh.ru/resumes`.
 4. При `401` автоматически обновляет токен и ретраит.
-5. Сохраняет:
-   - raw ответ (`raw_hh_response_...json`);
-   - сжатый форматированный файл (`hh_search_...json`) с ключевыми полями кандидатов.
-6. Возвращает `found` count.
+5. Возвращает `found` и компактные элементы кандидатов для UI; также сохраняет их в SQLite (`hh_search_runs`).
+6. Роут нормализует кандидатов до тонкой DTO-модели и возвращает JSON ответ.
 
 ### 5.4 Нормализация ответа для UI
 
@@ -217,7 +211,11 @@ txt/
    - показывает количество найденных по каждому уровню;
    - выбирает лучший уровень эвристикой (сначала уровень 3, затем 2, затем 1 по наличию кандидатов);
    - рендерит таблицу кандидатов.
-5. Чекбокс "показать промпт":
+5. Кнопка "Светофор":
+   - вызывает `POST /api/svetofor` (внутри светофор-LLM вызывается параллельно для первых `svetofor_top_x` кандидатов);
+   - применяет фильтры стажа/«прыгуна» и «максимум не в деле» к резюме кандидатов;
+   - показывает таблицу светофора (color + match_percent) и позволяет открыть промпты/ответ агента.
+6. Чекбокс "показать промпт":
    - загружает `system_prompt` и `user_prompt`;
    - позволяет отправить override в API.
 
@@ -226,6 +224,8 @@ txt/
 - строит прямые ссылки в HH с параметрами;
 - умеет копировать URL;
 - показывает "расшифровку" параметров поиска.
+- (для кнопки "Светофор") показывает ориентировочный тайминг этапов.
+- (для `POST /api/svetofor`) верхняя панель задаёт: `svetofor_top_x`; `min_stay_months`/`allowed_short_jobs`/`jump_mode` (фильтрация “подряд/вообще прыгун”); `max_not_employed_months` (отсечение кандидатов с слишком давним последним `end`).
 
 ---
 
@@ -264,8 +264,7 @@ txt/
 ### `app/services/query_generator.py`
 
 - `_build_prompt()` — сборка system+user prompt.
-- `_fallback_queries()` — безопасная эвристика при проблемах LLM.
-- `generate()` — основной алгоритм генерации и нормализации 3 уровней.
+- `generate()` — основной алгоритм генерации и нормализации 3 уровней; при проблемах отдаёт пустые строки (без mock-данных), а `llm_raw` помогает разобраться.
 
 ### `app/services/hh_search.py`
 
@@ -275,7 +274,14 @@ txt/
 - `_map_professional_roles()` — keyword mapping в HH `professional_role`.
 - `_build_search_filters()` — единый набор фильтров для HH API.
 - `search_counts_and_candidates()` — полный цикл поиска и сборки ответа по уровням.
-- `_mock_from_logs()` / `_mock_from_logs_candidates()` — мок-режим из сохраненных логов.
+
+### `app/services/job_stability.py`
+
+- `candidate_passes_job_stability()` — фильтры “подряд прыгун / вообще прыгун” и “максимум не в деле” для кандидатов перед вызовом светофора.
+
+### `app/core/log_store.py`
+
+- `SqliteLogStore` (через интерфейс `LogStore`) — persistence компактных результатов HH поиска в sqlite (без JSON-файлов в `logs/`).
 
 ### `app/clients/llm_client.py`
 
@@ -289,8 +295,7 @@ txt/
 - `get_token()` — получение токена из `ssp`.
 - `_build_api_params()` — сборка параметров HH API.
 - `_api_to_url_params()` — маппинг API-параметров к web-URL (для логики/диагностики).
-- `search()` — запрос в HH resumes API, retry на 401, сохранение raw/форматированных результатов.
-- `_save_search_results()` — запись компактного json для аудита.
+- `search()` — запрос в HH resumes API, retry на 401, возврат компактных элементов для UI; запись результатов в sqlite.
 - `get_resume_by_id()` — получение полного резюме по ID.
 
 ### `app/core/settings.py`
@@ -304,8 +309,8 @@ txt/
 
 ### `app/utils/file_manager.py`
 
-- `FileManager` — IO-утилита для `txt/` и `logs/`.
-- `read_txt()`, `save_json()`, `save_txt()`, `generate_filename()`.
+- `FileManager` — утилита для чтения prompt-шаблонов из `txt/` (запись логов в файловую систему в production лучше отключать).
+- `read_txt()` и сервисные утилиты.
 
 ---
 
@@ -315,9 +320,17 @@ txt/
 - **Глобальный anti-manager NOT**: исключает lead/head/cto и аналоги в full-text.
 - **Повторный anti-manager в `title`** для неруководящих вакансий: усиливает фильтрацию.
 - **Keyword mapping → professional roles**: авто-выбор роли HH по словам вакансии.
-- **Fallback без LLM**: сервис остается работоспособным при сбоях внешней модели.
+- **Диагностика при сбоях LLM**: если LLM не вернула/не распарсила запросы, уровни отдаются пустыми, а `llm_raw` используется для разборов.
 - **Retry на 401 для HH API**: улучшает устойчивость при истечении токена.
 - **Нормализация кандидатов в API**: фронт получает стабильную форму данных.
+- **Фильтрация “прыгун/не в деле”**: применяется перед вызовом светофор-LLM на основе `resume.experience`.
+- **Асинхронный светофор**: для первых `svetofor_top_x` кандидатов выполняются параллельные операции (HH resume fetch + LLM вызов) через `asyncio.gather` и `Semaphore`.
+
+### Как улучшать
+- Настраивайте бизнес-логику: редактируйте `candidate_passes_job_stability()` или добавляйте новые проверки перед вызовом светофора.
+- Подменяйте хранилище без рефакторинга: реализуйте интерфейс `LogStore` и заменяйте `SqliteLogStore`.
+- Регулируйте нагрузку: меняйте `Semaphore` (в `workflow.py`) и `svetofor_top_x` в UI.
+- Улучшайте парсинг LLM: корректируйте `LLMClient.extract_queries()` под актуальные форматы ответов.
 
 ---
 
@@ -330,15 +343,15 @@ txt/
 - `HH_TOKEN_URL` — внутренний endpoint токена.
 - `AREA_ID` — регион поиска (дефолт 113).
 - `PROFESSIONAL_ROLES` — роли по умолчанию (CSV).
-- `USE_MOCK_LLM`, `USE_MOCK_HH` — переключение моков.
+- `LOG_DB_PATH` — путь к sqlite-файлу для хранения результатов HH (дефолт `hh_optimizer.sqlite`).
 
 ---
 
 ## 10) Логи и диагностика
 
 - При HH поиске сохраняются:
-  - `logs/raw_hh_response_*` — полный API ответ;
-  - `logs/hh_search_*` — компактная выжимка по кандидатам.
+  - компактные результаты поиска в sqlite (таблица `hh_search_runs`);
+  - остальная диагностика — через `llm_raw` и поля debug в "Светофоре".
 - Логи Python управляются через `LOG_LEVEL`.
 
 ---
@@ -373,5 +386,5 @@ uvicorn app.main:app --reload
   В `HHSearchService._build_search_filters()` и env (`AREA_ID`, `PROFESSIONAL_ROLES`).
 
 - **Где смотреть проблемы интеграции?**  
-  Логи приложения + файлы в `logs/` (`raw_hh_response_*` в первую очередь).
+  Логи приложения + данные в sqlite (`hh_search_runs` в первую очередь).
 

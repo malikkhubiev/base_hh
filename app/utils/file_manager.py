@@ -9,11 +9,20 @@ from typing import Any
 class FileManager:
     """Read/write helper for prompt and log files."""
 
-    def __init__(self, txt_folder: str = "txt", output_folder: str = "logs") -> None:
+    def __init__(
+        self,
+        txt_folder: str = "txt",
+        output_folder: str = "logs",
+        *,
+        create_txt_folder: bool = False,
+        create_output_folder: bool = False,
+    ) -> None:
         self.txt_folder = Path(txt_folder)
         self.output_folder = Path(output_folder)
-        self.txt_folder.mkdir(parents=True, exist_ok=True)
-        self.output_folder.mkdir(parents=True, exist_ok=True)
+        if create_txt_folder:
+            self.txt_folder.mkdir(parents=True, exist_ok=True)
+        if create_output_folder:
+            self.output_folder.mkdir(parents=True, exist_ok=True)
 
     def read_txt(self, filename: str) -> str:
         """Read UTF-8 text file from prompts folder."""

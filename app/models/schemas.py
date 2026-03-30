@@ -46,8 +46,24 @@ class SearchRequest(BaseModel):
     system_prompt_override: str | None = None
     user_prompt_override: str | None = None
 
-    mock_llm: bool = False
-    mock_hh: bool = False
+    # Filter params for "job stability" stage in traffic light.
+    min_stay_months: int = Field(3, ge=1, le=240, description="Минимальный срок работы на одном месте (мес)")
+    allowed_short_jobs: int = Field(
+        2, ge=0, le=50, description="Разрешённое кол-во мест работы, где длительность < min_stay_months"
+    )
+    jump_mode: Literal["consecutive", "total"] = Field(
+        "consecutive",
+        description='Режим "прыгуна": consecutive = отсекать по подряд коротким, total = отсекать по общему числу коротких',
+    )
+    max_not_employed_months: int = Field(
+        6,
+        ge=0,
+        le=240,
+        description="Максимум не в деле (мес): если end последнего места работы старше этого — кандидат не берётся",
+    )
+
+    # How many first candidates to process by traffic light.
+    svetofor_top_x: int = Field(20, ge=1, le=200, description="Первые X кандидатов для вызова светофора")
 
 
 class SearchResponse(BaseModel):

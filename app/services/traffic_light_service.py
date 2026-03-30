@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
-from pathlib import Path
 from typing import Any
 
 from app.clients.llm_client import LLMClient
 from app.core.settings import settings
 from app.models.schemas import TrafficLightCandidate, TrafficLightRequirement
 from app.services.prompts import PromptService
+
+logger = logging.getLogger(__name__)
 
 
 class TrafficLightService:
@@ -32,23 +34,27 @@ class TrafficLightService:
             .replace("${candidatePrjExp}", candidate_prj_exp)
         )
 
-    def _parse_json_from_llm(self, llm_raw: dict[str, Any]) -> dict[str, Any]:
+    def _parse_json_from_llm(self, llm_raw: Any) -> dict[str, Any]:
         # В проекте для булевых запросов извлекают llm_response["response"].
         # Для светофора LLM часто возвращает вид: {"markdown": {...}}.
-        response_obj = llm_raw.get("response", llm_raw)
+        response_obj = llm_raw.get("response", llm_raw) if isinstance(llm_raw, dict) else llm_raw
 
         if isinstance(response_obj, dict):
             # Если LLM оборачивает полезные данные в markdown-поле — распакуем.
             markdown = response_obj.get("markdown")
             if isinstance(markdown, dict):
                 return markdown
-            return response_obj
+            # Некоторые обертки возвращают markdown как строку с кодфенсами и JSON внутри.
+            if isinstance(markdown, str):
+                response_obj = markdown
+            else:
+                return response_obj
 
         if isinstance(response_obj, str):
             txt = response_obj.strip()
             # Удаляем возможные Markdown-кодфенсы вокруг JSON.
-            txt = re.sub(r"^```[a-zA-Z]*\\s*", "", txt)
-            txt = re.sub(r"```\\s*$", "", txt)
+            txt = re.sub(r"^```[a-zA-Z]*\s*", "", txt)
+            txt = re.sub(r"```\s*$", "", txt)
             # Иногда LLM может вернуть текст с JSON внутри; вытащим подстроку.
             if not (txt.startswith("{") and txt.endswith("}")):
                 start = txt.find("{")
@@ -67,6 +73,31 @@ class TrafficLightService:
 
         raise ValueError("Unsupported LLM response shape for traffic light")
 
+    def _coerce_match_percent(self, value: Any) -> int:
+        """
+        LLM может вернуть match_percent как число, строку ("60") или с % ("60%").
+        Приводим к int в диапазоне 0..100 и не падаем на мусоре.
+        """
+        if value is None:
+            return 0
+        if isinstance(value, bool):
+            return int(value)
+        if isinstance(value, (int, float)):
+            try:
+                return max(0, min(100, int(round(float(value)))))
+            except Exception:
+                return 0
+        if isinstance(value, str):
+            # Забираем первое число (например "60%" -> 60).
+            m = re.search(r"(\d{1,3})", value)
+            if not m:
+                return 0
+            try:
+                return max(0, min(100, int(m.group(1))))
+            except Exception:
+                return 0
+        return 0
+
     def _calculate_color_score_percent(self, requirements: list[TrafficLightRequirement]) -> int:
         b = sum(1 for it in requirements if int(it.match_percent) >= 70)
         c = sum(1 for it in requirements if 30 <= int(it.match_percent) <= 69)
@@ -80,33 +111,6 @@ class TrafficLightService:
         # Округляем до целого процента; формально задача ожидает диапазон 1..100.
         return max(1, min(100, int(round(raw))))
 
-    def _mock_requirements(self) -> tuple[list[TrafficLightRequirement], dict[str, Any]]:
-        # Для локальной проверки/интерфейса можно поднять детерминированный ответ.
-        # Файл лежит в корне репозитория: todo/llm_svetofor_response.json
-        candidates = [
-            Path("todo") / "llm_svetofor_response.json",
-            Path(__file__).resolve().parents[3] / "todo" / "llm_svetofor_response.json",
-        ]
-        last_err: Exception | None = None
-        for p in candidates:
-            try:
-                if p.exists():
-                    data = json.loads(p.read_text(encoding="utf-8"))
-                    items = data.get("requirements", {}).get("items", [])
-                    requirements = [
-                        TrafficLightRequirement(
-                            requirement=it.get("requirement", ""),
-                            resume_evidence=it.get("resume_evidence", ""),
-                            match_percent=int(it.get("match_percent", 0)),
-                            difference_comment=it.get("difference_comment", ""),
-                        )
-                        for it in items
-                    ]
-                    return requirements, data
-            except Exception as e:  # pragma: no cover
-                last_err = e
-        raise FileNotFoundError("Mock traffic light response not found") from last_err
-
     def generate_candidate_traffic_light(
         self,
         *,
@@ -117,43 +121,31 @@ class TrafficLightService:
         title: str | None = None,
         location: str | None = None,
         resume_url: str | None = None,
-        mock_llm: bool = False,
     ) -> tuple[TrafficLightCandidate, Any | None]:
         prompt = self.build_prompt(request_text=request_text, candidate_prj_exp=candidate_prj_exp)
 
-        if mock_llm:
-            requirements, llm_raw = self._mock_requirements()
-            color_score_percent = self._calculate_color_score_percent(requirements)
-            return (
-                TrafficLightCandidate(
-                    id=candidate_id,
-                    candidate_name=candidate_name,
-                    title=title,
-                    location=location,
-                    resume_url=resume_url,
-                    color_score_percent=color_score_percent,
-                    requirements=requirements,
-                    candidate_prj_exp=candidate_prj_exp,
-                    debug_prompt=prompt,
-                    debug_llm_raw=llm_raw,
-                ),
-                llm_raw,
-            )
-        llm_raw = self.llm.call(prompt_text=prompt, iteration=0, model="YandexGPT\pro")
-        if not llm_raw:
-            requirements: list[TrafficLightRequirement] = []
-        else:
-            data = self._parse_json_from_llm(llm_raw)
-            items = data.get("requirements", {}).get("items", [])
-            requirements = [
-                TrafficLightRequirement(
-                    requirement=str(it.get("requirement", "")),
-                    resume_evidence=str(it.get("resume_evidence", "")),
-                    match_percent=int(it.get("match_percent", 0)),
-                    difference_comment=str(it.get("difference_comment", "")),
-                )
-                for it in items
-            ]
+        llm_raw = self.llm.call(prompt_text=prompt, iteration=0, model="YandexGPT\\pro")
+        requirements: list[TrafficLightRequirement] = []
+        if llm_raw:
+            try:
+                data = self._parse_json_from_llm(llm_raw)
+                items = data.get("requirements", {}).get("items", [])
+                if isinstance(items, list):
+                    for it in items:
+                        if not isinstance(it, dict):
+                            continue
+                        requirements.append(
+                            TrafficLightRequirement(
+                                requirement=str(it.get("requirement", "")),
+                                resume_evidence=str(it.get("resume_evidence", "")),
+                                match_percent=self._coerce_match_percent(it.get("match_percent")),
+                                difference_comment=str(it.get("difference_comment", "")),
+                            )
+                        )
+            except Exception:
+                # Если LLM вернул неожиданную форму/битый match_percent — не валим весь светофор,
+                # просто оставим requirements пустыми (color_score_percent станет 0).
+                logger.exception("Failed to parse traffic light LLM response")
 
         color_score_percent = self._calculate_color_score_percent(requirements)
         return (

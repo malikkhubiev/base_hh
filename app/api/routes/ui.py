@@ -181,7 +181,7 @@ def index() -> str:
     <div class="content">
       <div>
         <div class="subtitle">отладка workflow</div>
-        <div class="title">поиск резюме (LLM → булевы → HH)</div>
+        <div class="title">Поиск резюме (LLM → булевы → HH)</div>
       </div>
 
       <textarea id="requestText" placeholder="Вставьте запрос/требования..."></textarea>
@@ -195,10 +195,35 @@ def index() -> str:
           Кол-во кандидатов в таблице
           <input type="number" id="candLimit" value="20" min="1" max="200" />
         </label>
+        <label class="pill">
+          Светофор: первые X кандидатов
+          <input type="number" id="svetoforTopX" value="20" min="1" max="200" />
+        </label>
+        <label class="pill">
+          Минимальный срок (мес)
+          <input type="number" id="minStayMonths" value="3" min="1" max="240" />
+        </label>
+        <label class="pill">
+          Лимит коротких мест
+          <input type="number" id="allowedShortJobs" value="2" min="0" max="50" />
+        </label>
+        <label class="pill">
+          Режим прыгуна
+          <select id="jumpMode" style="margin-left:8px;">
+            <option value="consecutive">подряд прыгун</option>
+            <option value="total">вообще прыгун</option>
+          </select>
+        </label>
+        <label class="pill">
+          Максимум не в деле (мес)
+          <input type="number" id="maxNotEmployedMonths" value="6" min="0" max="240" />
+        </label>
         <label class="pill"><input type="checkbox" id="showPrompt" /> показать промпт</label>
       </div>
 
       <div id="status" class="subtitle"></div>
+      <div id="progressStage" class="subtitle" style="color:#333;"></div>
+      <div id="progressTimes" class="subtitle" style="color:#333;"></div>
       <div id="tokenInfo" class="subtitle" style="color:#000;">Ключ: SSP</div>
 
       <div id="promptBlock" class="llm" style="display:none;">
@@ -324,6 +349,17 @@ def index() -> str:
     if (tlBtn) tlBtn.disabled = b;
     const candT = el("candLimit");
     if (candT) candT.disabled = b;
+    const extraIds = [
+      "svetoforTopX",
+      "minStayMonths",
+      "allowedShortJobs",
+      "jumpMode",
+      "maxNotEmployedMonths",
+    ];
+    extraIds.forEach((id) => {
+      const t = el(id);
+      if (t) t.disabled = b;
+    });
     const promptT = el("systemPromptText");
     if (promptT) promptT.disabled = b;
     const userPromptT = el("userPromptText");
@@ -345,6 +381,34 @@ def index() -> str:
     const v = t ? Number(t.value) : 20;
     if (!Number.isFinite(v) || v <= 0) return 20;
     return Math.min(200, Math.max(1, v));
+  }
+
+  function getIntInput(id, def, minV, maxV) {
+    const t = el(id);
+    const v = t ? Number(t.value) : def;
+    if (!Number.isFinite(v)) return def;
+    return Math.min(maxV, Math.max(minV, Math.trunc(v)));
+  }
+
+  function getSvetoforTopX() {
+    return getIntInput("svetoforTopX", 20, 1, 200);
+  }
+
+  function getMinStayMonths() {
+    return getIntInput("minStayMonths", 3, 1, 240);
+  }
+
+  function getAllowedShortJobs() {
+    return getIntInput("allowedShortJobs", 2, 0, 50);
+  }
+
+  function getMaxNotEmployedMonths() {
+    return getIntInput("maxNotEmployedMonths", 6, 0, 240);
+  }
+
+  function getJumpMode() {
+    const v = el("jumpMode")?.value;
+    return v === "total" ? "total" : "consecutive";
   }
 
   function tlColorForScore(score) {
@@ -703,6 +767,44 @@ def index() -> str:
       .replaceAll("'","&#039;");
   }
 
+  let progressTimer = null;
+  function stopProgress() {
+    if (progressTimer) {
+      clearInterval(progressTimer);
+      progressTimer = null;
+    }
+  }
+
+  function startProgress(stage1Name, stage1Sec, stage2Name, stage2Sec, stage3Name, stage3Sec, totalSec) {
+    stopProgress();
+    const startedAt = Date.now();
+    const s1End = Math.max(0, Number(stage1Sec) || 0);
+    const s2End = s1End + Math.max(0, Number(stage2Sec) || 0);
+    const s3End = s2End + Math.max(0, Number(stage3Sec) || 0);
+    const ends = [s1End, s2End, s3End];
+    const names = [stage1Name, stage2Name, stage3Name];
+    const total = Math.max(1, Number(totalSec) || s3End || 1);
+
+    function tick() {
+      const elapsed = (Date.now() - startedAt) / 1000;
+      let stageIdx = 0;
+      if (elapsed >= s3End) stageIdx = 2;
+      else if (elapsed >= s2End) stageIdx = 2;
+      else if (elapsed >= s1End) stageIdx = 1;
+      const stageEnd = ends[Math.min(2, stageIdx)];
+      const stageLeft = Math.max(0, Math.ceil(stageEnd - elapsed));
+      const totalLeft = Math.max(0, Math.ceil(total - elapsed));
+      const ps = el("progressStage");
+      const pt = el("progressTimes");
+      if (ps) ps.textContent = names[stageIdx] || "";
+      if (pt) pt.textContent = `Осталось: этап ~${stageLeft}s, всего ~${totalLeft}s`;
+      if (elapsed >= total) stopProgress();
+    }
+
+    tick();
+    progressTimer = setInterval(tick, 400);
+  }
+
   async function api(path, body) {
     const res = await fetch(path, {
       method: "POST",
@@ -763,6 +865,11 @@ def index() -> str:
         request_text: requestText,
         selected_level: state.selectedLevel,
         candidates_limit: getCandidatesLimit(),
+        min_stay_months: getMinStayMonths(),
+        allowed_short_jobs: getAllowedShortJobs(),
+        jump_mode: getJumpMode(),
+        max_not_employed_months: getMaxNotEmployedMonths(),
+        svetofor_top_x: getSvetoforTopX(),
         system_prompt_override: getSystemPromptOverride(),
         user_prompt_override: getUserPromptOverride(),
       });
@@ -790,12 +897,29 @@ def index() -> str:
 
   el("btnSvetofor").onclick = async () => {
     const requestText = el("requestText").value.trim();
-    setBusy(true); setStatus("Светофор: LLM → HH → LLM...");
+    const topX = getSvetoforTopX();
+    setBusy(true);
+    setStatus("Светофор: LLM → HH → LLM...");
     try {
+      // Ориентировочная оценка таймингов (без стриминга), чтобы пользователь видел прогресс.
+      const stage1Sec = 20;
+      const stage2Sec = 25;
+      const stage3Sec = Math.max(10, Math.ceil(topX / 5) * 8);
+      const totalSec = stage1Sec + stage2Sec + stage3Sec;
+      const stage1Name = "Этап 1: генерация булевых запросов";
+      const stage2Name = "Этап 2: поиск в HH";
+      const stage3Name = `Этап 3: светофор (x${topX})`;
+      startProgress(stage1Name, stage1Sec, stage2Name, stage2Sec, stage3Name, stage3Sec, totalSec);
+
       const data = await api("/api/svetofor", {
         request_text: requestText,
         selected_level: state.selectedLevel,
         candidates_limit: getCandidatesLimit(),
+        min_stay_months: getMinStayMonths(),
+        allowed_short_jobs: getAllowedShortJobs(),
+        jump_mode: getJumpMode(),
+        max_not_employed_months: getMaxNotEmployedMonths(),
+        svetofor_top_x: topX,
         system_prompt_override: getSystemPromptOverride(),
         user_prompt_override: getUserPromptOverride(),
       });
@@ -816,8 +940,14 @@ def index() -> str:
       renderCandidates();
 
       renderTrafficLightTable(data.traffic_light_candidates || []);
+      stopProgress();
+      el("progressStage").textContent = "";
+      el("progressTimes").textContent = "";
       setStatus("Готово.");
     } catch (e) {
+      stopProgress();
+      el("progressStage").textContent = "";
+      el("progressTimes").textContent = "";
       setStatus("Ошибка: " + e.message);
     } finally { setBusy(false); }
   };

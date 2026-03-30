@@ -14,9 +14,6 @@ class Settings(BaseModel):
     # Токен HH всегда берется из внутреннего SSP-эндпоинта.
     token_source: str = "ssp"
 
-    use_mock_llm: bool = Field(default_factory=lambda: os.getenv("USE_MOCK_LLM", "false").lower() == "true")
-    use_mock_hh: bool = Field(default_factory=lambda: os.getenv("USE_MOCK_HH", "false").lower() == "true")
-
     area_id: int = Field(default_factory=lambda: int(os.getenv("AREA_ID", "113")))
     professional_roles: list[str] = Field(
         default_factory=lambda: [r.strip() for r in os.getenv("PROFESSIONAL_ROLES", "96,113").split(",") if r.strip()]

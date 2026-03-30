@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import json
 import logging
 import re
-from pathlib import Path
 from typing import Any
 
 from app.clients.hh_client import HHClient
-from app.utils.file_manager import FileManager
 
 logger = logging.getLogger(__name__)
 
@@ -43,15 +40,8 @@ class HHSearchService:
         self,
         token_url: str,
         token_source: str = "ssp",
-        txt_folder: str = "txt",
-        output_folder: str = "logs",
     ):
-        self.fm = FileManager(txt_folder=txt_folder, output_folder=output_folder)
-        self.hh = HHClient(
-            token_url=token_url,
-            file_manager=self.fm,
-            token_source=token_source,
-        )
+        self.hh = HHClient(token_url=token_url, token_source=token_source)
 
     def add_exclusion(self, query: str) -> str:
         return f"({query}) {EXCLUSION}"
@@ -115,7 +105,6 @@ class HHSearchService:
         area_id: int | None,
         professional_roles: list[str] | None,
         per_page: int = 20,
-        mock: bool = False,
     ) -> tuple[dict[str, int], dict[str, list[dict[str, Any]]], dict[str, str]]:
         """
         Returns:
@@ -123,12 +112,6 @@ class HHSearchService:
         - candidates_by_level (up to per_page) by level
         - full_queries_with_exclusions by level
         """
-        if mock:
-            logger.info("Using mock HH data from logs")
-            return self._mock_from_logs(), {k: v for k, v in self._mock_from_logs_candidates().items()}, {
-                level: self.add_exclusion(q) for level, q in queries.items()
-            }
-
         found_counts: dict[str, int] = {}
         candidates_by_level: dict[str, list[dict[str, Any]]] = {}
         full_queries: dict[str, str] = {}
@@ -142,43 +125,15 @@ class HHSearchService:
             full_q = self.add_exclusion(q)
             full_queries[level] = full_q
 
-            count = self.hh.search(
+            count, items = self.hh.search(
                 query=full_q,
                 filters=filters,
                 per_page=per_page,
-                save_results=True,
                 level_name=level,
                 iteration=0,
             )
             found_counts[level] = int(count or 0)
-
-            # Для UI перечитываем последний сохраненный raw-ответ HH.
-            raw_path = Path(self.fm.output_folder) / f"raw_hh_response_{level.replace(' ', '_')}_iter1.json"
-            if raw_path.exists():
-                try:
-                    raw = json.loads(raw_path.read_text(encoding="utf-8"))
-                    items = raw.get("items") if isinstance(raw, dict) else None
-                    candidates_by_level[level] = items if isinstance(items, list) else []
-                except Exception:
-                    candidates_by_level[level] = []
-            else:
-                candidates_by_level[level] = []
+            candidates_by_level[level] = items if isinstance(items, list) else []
 
         return found_counts, candidates_by_level, full_queries
-
-    def _mock_from_logs(self) -> dict[str, int]:
-        path = Path("logs") / "iteration_results_iter1_20260324_120612.json"
-        if not path.exists():
-            return {"Уровень 1": 0, "Уровень 2": 0, "Уровень 3": 0}
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data.get("results", {"Уровень 1": 0, "Уровень 2": 0, "Уровень 3": 0})
-
-    def _mock_from_logs_candidates(self) -> dict[str, list[dict[str, Any]]]:
-        # Используем один сохраненный файл как общий мок для всех уровней.
-        sample = next(Path("logs").glob("hh_search_iter1_L_1_*.json"), None)
-        if not sample:
-            return {"Уровень 1": [], "Уровень 2": [], "Уровень 3": []}
-        data = json.loads(sample.read_text(encoding="utf-8"))
-        items = data.get("items", [])
-        return {"Уровень 1": items, "Уровень 2": items, "Уровень 3": items}
 

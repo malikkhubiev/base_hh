@@ -15,6 +15,7 @@ from app.services.hh_search import HHSearchService
 from app.services.prompts import PromptService
 from app.services.query_generator import QueryGenerator
 from app.services.traffic_light_service import TrafficLightService
+from app.services.job_stability import candidate_passes_job_stability
 
 
 router = APIRouter()
@@ -36,7 +37,7 @@ def user_prompt() -> str:
 
 
 @router.post("/generate_queries", response_model=GenerateQueriesResponse)
-def generate_queries(payload: GenerateQueriesRequest, mock_llm: bool = False):
+def generate_queries(payload: GenerateQueriesRequest):
     gen = QueryGenerator(
         llm_url=settings.llm_url,
         llm_token_param=settings.llm_token_param,
@@ -45,7 +46,6 @@ def generate_queries(payload: GenerateQueriesRequest, mock_llm: bool = False):
         payload.request_text,
         system_prompt_override=payload.system_prompt_override,
         user_prompt_override=payload.user_prompt_override,
-        mock=mock_llm or settings.use_mock_llm,
     )
     return GenerateQueriesResponse(llm_raw=llm_raw, queries=queries)  # type: ignore[arg-type]
 
@@ -63,7 +63,6 @@ def search(payload: SearchRequest):
         payload.request_text,
         system_prompt_override=payload.system_prompt_override,
         user_prompt_override=payload.user_prompt_override,
-        mock=payload.mock_llm or settings.use_mock_llm,
     )
 
     # В проекте используется единственный источник токена: SSP.
@@ -77,7 +76,6 @@ def search(payload: SearchRequest):
         source_text=payload.request_text,
         area_id=area_id,
         professional_roles=professional_roles,
-        mock=payload.mock_hh or settings.use_mock_hh,
         per_page=payload.candidates_limit,
     )
 
@@ -168,7 +166,7 @@ def _extract_candidate_prj_exp(resume_data: dict) -> str:
 
 
 @router.post("/svetofor", response_model=SvetoforResponse)
-def svetofor(payload: SearchRequest):
+async def svetofor(payload: SearchRequest):
     area_id = payload.area_id or settings.area_id
     professional_roles = payload.professional_roles or settings.professional_roles
 
@@ -180,7 +178,6 @@ def svetofor(payload: SearchRequest):
         payload.request_text,
         system_prompt_override=payload.system_prompt_override,
         user_prompt_override=payload.user_prompt_override,
-        mock=payload.mock_llm or settings.use_mock_llm,
     )
 
     token_source = settings.token_source
@@ -193,7 +190,6 @@ def svetofor(payload: SearchRequest):
         source_text=payload.request_text,
         area_id=area_id,
         professional_roles=professional_roles,
-        mock=payload.mock_hh or settings.use_mock_hh,
         per_page=payload.candidates_limit,
     )
 
@@ -228,43 +224,71 @@ def svetofor(payload: SearchRequest):
     selected_level = _pick_best_level_by_candidates(candidates_by_level)
 
     traffic_light_service = TrafficLightService()
-    traffic_light_candidates: list = []
-    test_limit = 20
     selected_list = candidates_by_level.get(selected_level, []) or []
-    for c in selected_list[:test_limit]:
-        candidate_id = c.get("id")
-        if not candidate_id:
-            continue
-        name = _candidate_name(c)
-        title = c.get("title")
+    traffic_light_candidates: list = []
 
-        area = c.get("area")
-        location = ""
-        if isinstance(area, dict):
-            location = area.get("name") or ""
-        elif isinstance(area, str):
-            location = area
+    top_x = max(1, int(payload.svetofor_top_x))
+    candidates_for_tl = selected_list[:top_x]
 
-        resume_url = c.get("alternate_url") or c.get("url")
+    # Async processing: each candidate needs HH resume fetch + LLM traffic light call.
+    # We run tasks concurrently to reduce end-to-end latency.
+    import asyncio
 
-        candidate_prj_exp = ""
-        if not (payload.mock_hh or settings.use_mock_hh):
-            resume_data = hh.hh.get_resume_by_id(str(candidate_id))
-            if isinstance(resume_data, dict):
-                candidate_prj_exp = _extract_candidate_prj_exp(resume_data)
+    semaphore = asyncio.Semaphore(10)
 
-        mock_llm = payload.mock_llm or settings.use_mock_llm
-        tl_candidate, _llm_raw_tl = traffic_light_service.generate_candidate_traffic_light(
-            request_text=payload.request_text,
-            candidate_prj_exp=candidate_prj_exp,
-            candidate_id=str(candidate_id),
-            candidate_name=name,
-            title=title,
-            location=location or None,
-            resume_url=resume_url or None,
-            mock_llm=mock_llm,
-        )
-        traffic_light_candidates.append(tl_candidate)
+    async def process_one_candidate(c: dict[str, Any]) -> Any | None:
+        async with semaphore:
+            candidate_id = c.get("id")
+            if not candidate_id:
+                return None
+
+            name = _candidate_name(c)
+            title = c.get("title")
+
+            area = c.get("area")
+            location = ""
+            if isinstance(area, dict):
+                location = area.get("name") or ""
+            elif isinstance(area, str):
+                location = area
+
+            resume_url = c.get("alternate_url") or c.get("url")
+
+            # HH resume is sync; run in thread to avoid blocking the event loop.
+            resume_data = await asyncio.to_thread(hh.hh.get_resume_by_id, str(candidate_id))
+            if not isinstance(resume_data, dict):
+                return None
+
+            exp_list = resume_data.get("experience")
+            if not candidate_passes_job_stability(
+                exp_list if isinstance(exp_list, list) else None,
+                min_stay_months=payload.min_stay_months,
+                allowed_short_jobs=payload.allowed_short_jobs,
+                jump_mode=payload.jump_mode,
+                max_not_employed_months=payload.max_not_employed_months,
+            ):
+                return None
+
+            candidate_prj_exp = _extract_candidate_prj_exp(resume_data)
+
+            try:
+                tl_candidate, _llm_raw_tl = await asyncio.to_thread(
+                    traffic_light_service.generate_candidate_traffic_light,
+                    request_text=payload.request_text,
+                    candidate_prj_exp=candidate_prj_exp,
+                    candidate_id=str(candidate_id),
+                    candidate_name=name,
+                    title=title,
+                    location=location or None,
+                    resume_url=resume_url or None,
+                )
+            except Exception:
+                # If LLM returns unexpected shape for a candidate, skip it.
+                return None
+            return tl_candidate
+
+    results = await asyncio.gather(*(process_one_candidate(c) for c in candidates_for_tl))
+    traffic_light_candidates = [r for r in results if r is not None]
 
     traffic_light_candidates = sorted(traffic_light_candidates, key=lambda x: x.color_score_percent, reverse=True)
 

@@ -32,61 +32,39 @@ class QueryGenerator:
         system_prompt = system_prompt_override if system_prompt_override is not None else self.system_prompt
         return f"{system_prompt}\n\n{user_prompt}"
 
-    def _fallback_queries(self, request_text: str) -> dict[str, str]:
-        # Простая эвристика: берем ключевые слова из текста вакансии.
-        keywords = []
-        for line in request_text.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            # Берем первую смысловую часть до скобок.
-            keywords.append(line.split("(")[0].strip(" ;."))
-        base = "Python"
-        tail = " OR ".join([k for k in keywords if k and "Python" not in k][:20])
-        if tail:
-            q1 = f"{base} AND ({tail})"
-        else:
-            q1 = base
-        return {
-            "Уровень 1": q1,
-            "Уровень 2": q1,
-            "Уровень 3": q1,
-        }
-
     def generate(
         self,
         request_text: str,
         *,
         system_prompt_override: str | None = None,
         user_prompt_override: str | None = None,
-        mock: bool = False,
     ) -> tuple[dict[str, str], Any | None]:
-        if mock:
-            logger.info("Using mock LLM queries")
-            return self._fallback_queries(request_text), None
-
         prompt = self._build_prompt(
             request_text,
             system_prompt_override=system_prompt_override,
             user_prompt_override=user_prompt_override,
         )
         llm_raw = self.llm.call(prompt_text=prompt, iteration=0)
+        empty = {"Уровень 1": "", "Уровень 2": "", "Уровень 3": ""}
         if not llm_raw:
-            return self._fallback_queries(request_text), None
+            return empty, None
 
         queries = self.llm.extract_queries(llm_raw)
         if not queries:
-            return self._fallback_queries(request_text), llm_raw
+            return empty, llm_raw
 
         # Нормализация: гарантируем наличие всех трех уровней.
         for k in ["Уровень 1", "Уровень 2", "Уровень 3"]:
             if k not in queries:
-                queries[k] = queries.get("Уровень 2") or queries.get("Уровень 1") or "Python"
+                queries[k] = ""
 
         # Приводим значения к строкам для стабильного контракта API.
         safe: dict[str, str] = {}
         for k, v in queries.items():
             safe[k] = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
+
+        for k in ["Уровень 1", "Уровень 2", "Уровень 3"]:
+            safe.setdefault(k, "")
 
         return safe, llm_raw
 
