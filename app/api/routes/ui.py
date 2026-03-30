@@ -460,7 +460,7 @@ def index() -> str:
               style="padding:8px 10px; font-size:12px; text-transform:none; letter-spacing:0; line-height:1; cursor:pointer;"
               title="Показать проектный опыт, который подставляется в промпт"
             >
-              Открыть проектный опыт
+              Опыт
             </button>
             <span class="mono">${escapeHtml(candidateName || id)}</span>
           </div>

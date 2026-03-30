@@ -1,4 +1,262 @@
-Ответ агента (raw)
-{
-  "markdown": "```\n{\n  \"requirements\": {\n    \"items\": [\n      {\n        \"requirement\": \"Опыт разработки на Python от 4 лет в production-системах (PET и MVP без продакшена не рассматриваются)\",\n        \"resume_evidence\": \"2021-09-01 - 2024-09-01 (Мегаорион) Разработчик Python / TeamLead: Управление коллективом разработчиков из 5-ти человек, бекэнд, фронтэнд. 2024-11-01 - 2026-02-01 (ООО ВМ ИТ) Python-разработчик: Разработка и поддержка backend-сервисов на Python (FastAPI)\",\n        \"match_percent\": 100,\n        \"difference_comment\": \"Кандидат имеет более 4 лет опыта разработки на Python в production-системах.\"\n      },\n      {\n        \"requirement\": \"Опыт работы с MPP аналитическими хранилищами данных: Arenadata HyperWave ИЛИ Greenplum / Vertica / Teradata / ClickHouse (DWH)\",\n        \"resume_evidence\": \"\",\n        \"match_percent\": 0,\n        \"difference_comment\": \"В резюме нет упоминания опыта работы с MPP аналитическими хранилищами данных.\"\n      },\n      {\n        \"requirement\": \"Опыт работы с Hadoop / Data Lake стеком: Arenadata Hadoop ИЛИ Apache Hadoop (HDFS или Ozone)\",\n        \"resume_evidence\": \"\",\n        \"match_percent\": 0,\n        \"difference_comment\": \"В резюме нет упоминания опыта работы с Hadoop или Data Lake стеком.\"\n      },\n      {\n        \"requirement\": \"Опыт работы с SQL-движками: Impala ИЛИ Hive\",\n        \"resume_evidence\": \"\",\n        \"match_percent\": 0,\n        \"difference_comment\": \"В резюме нет упоминания опыта работы с Impala или Hive.\"\n      },\n      {\n        \"requirement\": \"Опыт работы с Parquet\",\n        \"resume_evidence\": \"\",\n        \"match_percent\": 0,\n        \"difference_comment\": \"В резюме нет упоминания опыта работы с Parquet.\"\n      },\n      {\n        \"requirement\": \"Опыт работы с Spark (PySpark)\",\n        \"resume_evidence\": \"\",\n        \"match_percent\": 0,\n        \"difference_comment\": \"В резюме нет упоминания опыта работы с Spark или PySpark.\"\n      },\n      {\n        \"requirement\": \"Опыт работы с Airflow\",\n        \"resume_evidence\": \"\",\n        \"match_percent\": 0,\n        \"difference_comment\": \"В резюме нет упоминания опыта работы с Airflow.\"\n      },\n      {\n        \"requirement\": \"Опыт работы с Enterprise Security в Hadoop: Kerberos / Ranger / Knox\",\n        \"resume_evidence\": \"\",\n        \"match_percent\": 0,\n        \"difference_comment\": \"В резюме нет упоминания опыта работы с Enterprise Security в Hadoop.\"\n      },\n      {\n        \"requirement\": \"Опыт работы с Visiology\",\n        \"resume_evidence\": \"\",\n        \"match_percent\": 0,\n        \"difference_comment\": \"В резюме нет упоминания опыта работы с Visiology.\"\n      }\n    ]\n  }\n}\n```"
-}
+Я извлеку из файла всё, что связано с чатами и сообщениями.
+
+## Все методы чатов (paths)
+
+Чаты находятся в разделе `paths` с префиксом `/common/chats`:
+
+### 1. Получение списка чатов (строки 29927-29966)
+```
+29927:  /common/chats:
+29928:    x-name: /common/chats
+29929:    get:
+29930:      operationId: get-common-chat-list
+29931:      tags:
+29932:        - Чаты
+29933:      summary: Получить список чатов
+```
+
+### 2. Получение количества непрочитанных чатов (строки 29967-29977)
+```
+29967:  /common/chats/counters/unread:
+29968:    x-name: /common/chats/counters/unread
+29969:    get:
+29970:      operationId: unread-chats-count
+29971:      tags:
+29972:        - Чаты
+29973:      summary: Получить количество непрочитанных чатов
+```
+
+### 3. Создание чата без вакансии (строки 29978-30011)
+```
+29978:  /common/chats/without_vacancy:
+29979:    x-name: /common/chats/without_vacancy
+29980:    post:
+29981:      operationId: get-or-create-chat-without-vacancy-common
+29982:      tags:
+29983:        - Чаты
+29984:      summary: Создание чата без вакансии
+```
+
+### 4. Получение свойств файлов для чатов (строки 30012-30027)
+```
+30012:  /common/chats/files/conditions:
+30013:    x-name: /common/chats/files/conditions
+30014:    get:
+30015:      operationId: get-common-chat-files-conditions
+30016:      tags:
+30017:        - Чаты
+30018:      summary: Получить свойства файлов для чатов
+```
+
+### 5. Получение ссылки для загрузки файла (строки 30028-30081)
+```
+30028:  /common/chats/files/upload_links:
+30029:    x-name: /common/chats/files/upload_links
+30030:    post:
+30031:      operationId: get-common-chat-files-upload-links
+30032:      tags:
+30033:        - Чаты
+30034:      summary: Получить ссылку для отправки файла в чат
+```
+
+### 6. Получение сообщений чата (строки 30082-30120)
+```
+30082:  '/common/chats/{chat_id}/messages':
+30083:    x-name: '/common/chats/{chat_id}/messages'
+30084:    get:
+30085:      operationId: get-chat-messages
+30086:      tags:
+30087:        - Чаты
+30088:      summary: Получение списка сообщений чата
+```
+
+### 7. Отправка сообщения в чат (строки 30121-30148)
+```
+30121:    post:
+30122:      operationId: chat-message-post
+30123:      tags:
+30124:        - Чаты
+30125:      summary: Отправить сообщение в чат
+```
+
+### 8. Редактирование сообщения (строки 30149-30171)
+```
+30149:  '/common/chats/{chat_id}/messages/{message_id}':
+30150:    x-name: '/common/chats/{chat_id}/messages/{message_id}'
+30151:    put:
+30152:      operationId: chat-message-put
+30153:      tags:
+30154:        - Чаты
+30155:      summary: Изменение сообщения в чате
+```
+
+### 9. Удаление сообщения (строки 30172-30191)
+```
+30172:    delete:
+30173:      operationId: chat-message-delete
+30174:      tags:
+30175:        - Чаты
+30176:      summary: Удаление сообщения в чате
+```
+
+### 10. Отметка сообщения прочитанным (строки 30192-30220)
+```
+30192:  '/common/chats/{chat_id}/message/{message_id}/read':
+30193:    x-name: '/common/chats/{chat_id}/message/{message_id}/read'
+30194:    put:
+30195:      operationId: set-last-viewed-message
+30196:      tags:
+30197:        - Чаты
+30198:      summary: Установка последнего прочитанного сообщения
+```
+
+### 11. Управление участниками чата (строки 30221-30272)
+```
+30221:  '/common/chats/{chat_id}/participants':
+30222:    x-name: '/common/chats/{chat_id}/participants'
+30223:    get:
+30224:      operationId: get-participant-list
+30225:      tags:
+30226:        - Чаты
+30227:      summary: Получение списка участников чата
+30257:    put:
+30258:      operationId: put-participant-list
+30259:      tags:
+30260:        - Чаты
+30261:      summary: Добавление участника в чат
+```
+
+### 12. Покинуть чат (строки 30273-30286)
+```
+30273:  '/common/chats/{chat_id}/leave':
+30274:    x-name: '/common/chats/{chat_id}/leave'
+30275:    put:
+30276:      operationId: leave-chat
+30277:      tags:
+30278:        - Чаты
+30279:      summary: Покинуть чат
+```
+
+### 13. Запретить/разрешить переписку (строки 30287-30302)
+```
+30287:  '/common/chats/{chat_id}/write_possibility':
+30288:    x-name: '/common/chats/{chat_id}/write_possibility'
+30289:    put:
+30290:      operationId: set-write-possibility-common
+30291:      tags:
+30292:        - Чаты
+30293:      summary: Запретить/разрешить переписку в чате соискателю
+```
+
+---
+
+## Все схемы (schemas) связанные с чатами
+
+### ChatsCommonChatWithoutVacancyPost (строки 1175-1186)
+Создание чата без вакансии
+
+### ChatsCommonCommonChatListResponse (строки 1188-1196)
+Список чатов пользователя
+
+### ChatsCommonChatItems (строки 1198-1209)
+Список чатов
+
+### ChatsCommonChatBasic (строки 1211-1244)
+Базовая информация о чате
+
+### ChatsCommonBlockReason (строки 1246-1251)
+Причина блокировки чата
+
+### ChatsCommonDisplayInfo (строки 1253-1264)
+Отображаемая информация о чате
+
+### ChatsCommonMessageShort (строки 1278-1309)
+Короткая информация о сообщении
+
+### ChatsCommonSenderDisplayInfo (строки 1311-1329)
+Информация об отправителе
+
+### ChatsCommonFilesConditionsResponse (строки 1331-1348)
+Свойства файлов для отправки
+
+### ChatsCommonFilesUploadLinksResponse (строки 1350-1362)
+Ссылка для загрузки файла
+
+### ChatsCommonMessagePost (строки 1364-1369)
+Отправка сообщения
+
+### ChatsCommonMessagePostFileUploadIds (строки 1371-1387)
+Отправка с идентификаторами файлов
+
+### ChatsCommonMessagePostText (строки 1389-1406)
+Отправка текстового сообщения
+
+### ChatsCommonMessagePut (строки 1408-1414)
+Изменение сообщения
+
+### ChatsCommonMessagesResponse (строки 1416-1422)
+Чат со списком сообщений
+
+### ChatsCommonChatState (строки 1424-1446)
+Состояние чата
+
+### ChatsCommonMessageItems (строки 1448-1466)
+Список сообщений
+
+### ChatsCommonMessage (строки 1468-1527)
+Полная информация о сообщении
+
+### ChatsCommonParticipantShort (строки 1529-1544)
+Участник чата (кратко)
+
+### ChatsCommonParticipantListResponse (строки 1546-1555)
+Список участников
+
+### ChatsCommonParticipant (строки 1557-1581)
+Участник чата
+
+### ChatsCommonParticipantManager (строки 1583-1589)
+Идентификатор добавляемого менеджера
+
+### ChatsCommonUnreadChatsCountResponse (строки 1591-1598)
+Количество непрочитанных чатов
+
+---
+
+## Ошибки связанные с чатами
+
+### ErrorsChatsChatBadArgument (строки 4618-4621)
+Ошибки аргументов чата
+
+### ErrorsChatsBadRequestErrors (строки 4623-4635)
+Плохой запрос
+
+### ErrorsChatsBadRequestError (строки 4637-4664)
+Ошибки отправки сообщения
+
+### ErrorsChatsChatForbidden (строки 4715-4718)
+Доступ запрещен
+
+### ErrorsChatsForbiddenErrors (строки 4720-4732)
+Запрет на действие
+
+### ErrorsChatsForbiddenError (строки 4734-4747)
+Причина запрета
+
+### ErrorsChatsForbiddenDeleteErrors (строки 4749-4761)
+Запрет на удаление
+
+### ErrorsChatsForbiddenDeleteError (строки 4763-4775)
+Причина запрета на удаление
+
+### ErrorsChatsMessageErrors (строки 4777-4789)
+Ошибки получения сообщений
+
+### ErrorsChatsMessageError (строки 4791-4808)
+Ошибки при получении
+
+### ErrorsChatsNotFoundErrors (строки 4810-4822)
+Не найдено
+
+### ErrorsChatsNotFoundError (строки 4824-4836)
+Ошибка "не найдено"
