@@ -64,6 +64,14 @@ class SearchRequest(BaseModel):
 
     # How many first candidates to process by traffic light.
     svetofor_top_x: int = Field(20, ge=1, le=200, description="Первые X кандидатов для вызова светофора")
+    include_traffic_light: bool = Field(
+        False,
+        description="Включать расчёт и лист Светофора в Excel (только если пользователь запускал кнопку Светофор)",
+    )
+    traffic_light_candidates_for_excel: list[TrafficLightCandidate] | None = Field(
+        default=None,
+        description="Готовые кандидаты Светофора из UI для экспорта в Excel без повторного пересчёта",
+    )
 
 
 class SearchResponse(BaseModel):

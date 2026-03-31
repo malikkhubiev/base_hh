@@ -193,38 +193,55 @@ def index() -> str:
       <textarea id="requestText" placeholder="Вставьте запрос/требования..."></textarea>
 
       <div class="row">
-        <button class="secondary" id="btnDefault">Запрос по умолчанию</button>
-        <button class="secondary" id="btnBool">Получить булевый запрос</button>
-        <button id="btnSearch">Поиск</button>
-        <button id="btnSvetofor">Светофор</button>
-        <label class="pill">
-          Кол-во кандидатов в таблице
-          <input type="number" id="candLimit" value="20" min="1" max="200" />
-        </label>
-        <label class="pill">
-          Светофор: первые X кандидатов
-          <input type="number" id="svetoforTopX" value="20" min="1" max="200" />
-        </label>
-        <label class="pill">
-          Минимальный срок (мес)
-          <input type="number" id="minStayMonths" value="3" min="1" max="240" />
-        </label>
-        <label class="pill">
-          Лимит коротких мест
-          <input type="number" id="allowedShortJobs" value="2" min="0" max="50" />
-        </label>
-        <label class="pill">
-          Режим прыгуна
-          <select id="jumpMode" style="margin-left:8px;">
-            <option value="consecutive">подряд прыгун</option>
-            <option value="total">вообще прыгун</option>
-          </select>
-        </label>
-        <label class="pill">
-          Максимум не в деле (мес)
-          <input type="number" id="maxNotEmployedMonths" value="6" min="0" max="240" />
-        </label>
-        <label class="pill"><input type="checkbox" id="showPrompt" /> показать промпт</label>
+        <div class="stack" style="flex:2; min-width:260px;">
+          <div class="row">
+            <button class="secondary" id="btnDefault">Запрос по умолчанию</button>
+            <button class="secondary" id="btnBool">Получить булевый запрос</button>
+            <button id="btnSearch">Поиск</button>
+            <button id="btnSvetofor">Светофор</button>
+          </div>
+          <div class="row">
+            <label class="pill">
+              <input type="checkbox" id="exportExcel" />
+              Сформировать таблицу Excel
+            </label>
+            <button class="secondary" id="btnDownloadExcel" type="button" disabled>Скачать Excel</button>
+          </div>
+        </div>
+        <div class="stack" style="flex:3; min-width:260px;">
+          <div class="row">
+            <label class="pill">
+              Кол-во кандидатов в таблице
+              <input type="number" id="candLimit" value="20" min="1" max="200" />
+            </label>
+            <label class="pill">
+              Светофор: первые X кандидатов
+              <input type="number" id="svetoforTopX" value="20" min="1" max="200" />
+            </label>
+            <label class="pill">
+              Минимальный срок (мес)
+              <input type="number" id="minStayMonths" value="3" min="1" max="240" />
+            </label>
+          </div>
+          <div class="row">
+            <label class="pill">
+              Лимит коротких мест
+              <input type="number" id="allowedShortJobs" value="2" min="0" max="50" />
+            </label>
+            <label class="pill">
+              Режим прыгуна
+              <select id="jumpMode" style="margin-left:8px;">
+                <option value="consecutive">подряд прыгун</option>
+                <option value="total">вообще прыгун</option>
+              </select>
+            </label>
+            <label class="pill">
+              Максимум не в деле (мес)
+              <input type="number" id="maxNotEmployedMonths" value="6" min="0" max="240" />
+            </label>
+            <label class="pill"><input type="checkbox" id="showPrompt" /> показать промпт</label>
+          </div>
+        </div>
       </div>
 
       <div id="status" class="subtitle"></div>
@@ -308,7 +325,7 @@ def index() -> str:
             <tr>
               <th>Запрос</th>
               <th>Резюме</th>
-              <th>Цвет</th>
+              <th>Итог</th>
               <th>Несоответствие</th>
             </tr>
           </thead>
@@ -343,6 +360,10 @@ def index() -> str:
     systemPromptLoaded: false,
     userPromptLoaded: false,
     trafficLightById: null,
+    trafficLightCandidates: [],
+    hasTrafficLightRun: false,
+    excelBlobUrl: null,
+    excelFileName: "",
   };
 
   function setStatus(text) { el("status").textContent = text || ""; }
@@ -360,6 +381,8 @@ def index() -> str:
       "allowedShortJobs",
       "jumpMode",
       "maxNotEmployedMonths",
+      "exportExcel",
+      "btnDownloadExcel",
     ];
     extraIds.forEach((id) => {
       const t = el(id);
@@ -437,6 +460,7 @@ def index() -> str:
     tbody.innerHTML = "";
 
     const list = Array.isArray(items) ? items : [];
+    state.trafficLightCandidates = [...list];
     block.style.display = list.length ? "block" : "none";
 
     list.forEach((c) => {
@@ -873,6 +897,94 @@ def index() -> str:
     return await res.json();
   }
 
+  function revokeExcelBlobUrl() {
+    if (state.excelBlobUrl) {
+      try { window.URL.revokeObjectURL(state.excelBlobUrl); } catch (e) {}
+      state.excelBlobUrl = null;
+    }
+    state.excelFileName = "";
+  }
+
+  function buildExcelPayload() {
+    const trafficLightCandidates = Array.isArray(state.trafficLightCandidates) ? state.trafficLightCandidates : [];
+    return {
+      request_text: el("requestText").value.trim(),
+      selected_level: state.selectedLevel,
+      candidates_limit: getCandidatesLimit(),
+      min_stay_months: getMinStayMonths(),
+      allowed_short_jobs: getAllowedShortJobs(),
+      jump_mode: getJumpMode(),
+      max_not_employed_months: getMaxNotEmployedMonths(),
+      svetofor_top_x: getSvetoforTopX(),
+      include_traffic_light: !!state.hasTrafficLightRun,
+      traffic_light_candidates_for_excel: trafficLightCandidates,
+      system_prompt_override: getSystemPromptOverride(),
+      user_prompt_override: getUserPromptOverride(),
+    };
+  }
+
+  async function prebuildExcel() {
+    const exportEnabled = !!el("exportExcel")?.checked;
+    const btnXls = el("btnDownloadExcel");
+    if (!exportEnabled) {
+      revokeExcelBlobUrl();
+      if (btnXls) btnXls.disabled = true;
+      return;
+    }
+    const hasResults = Boolean(state.candidatesByLevel);
+    if (!hasResults) {
+      if (btnXls) btnXls.disabled = true;
+      return;
+    }
+    const body = buildExcelPayload();
+    if (!body.request_text) {
+      if (btnXls) btnXls.disabled = true;
+      return;
+    }
+    if (btnXls) btnXls.disabled = true;
+    setStatus("Формирую Excel заранее...");
+    const res = await fetch("/api/export_excel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(`${res.status}: ${t}`);
+    }
+    const blob = await res.blob();
+    revokeExcelBlobUrl();
+    state.excelBlobUrl = window.URL.createObjectURL(blob);
+    state.excelFileName = `hh_search_${new Date().toISOString().replace(/[-:]/g,"").slice(0,15)}.xlsx`;
+    if (btnXls) btnXls.disabled = false;
+    setStatus("Excel готов. Кнопка «Скачать Excel» скачает сразу.");
+  }
+
+  async function downloadExcel() {
+    const exportEnabled = !!el("exportExcel")?.checked;
+    if (!exportEnabled) {
+      setStatus("Отметьте чекбокс «Сформировать таблицу Excel» перед выгрузкой.");
+      return;
+    }
+    try {
+      if (!state.excelBlobUrl) {
+        await prebuildExcel();
+      }
+      if (!state.excelBlobUrl) {
+        throw new Error("Excel еще не готов");
+      }
+      const a = document.createElement("a");
+      a.href = state.excelBlobUrl;
+      a.download = state.excelFileName || `hh_search_${new Date().toISOString().replace(/[-:]/g,"").slice(0,15)}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setStatus("Excel скачан.");
+    } catch (e) {
+      setStatus("Ошибка Excel: " + e.message);
+    }
+  }
+
   el("btnDefault").onclick = async () => {
     setBusy(true); setStatus("Загружаю запрос по умолчанию...");
     try {
@@ -923,6 +1035,15 @@ def index() -> str:
   el("btnSearch").onclick = async () => {
     const requestText = el("requestText").value.trim();
     setBusy(true); setStatus("Поиск: LLM → HH...");
+    // Оценка таймингов поиска (без светофора)
+    const stage1Sec = 12;
+    const stage2Sec = 15;
+    const stage3Sec = 5;
+    const totalSec = stage1Sec + stage2Sec + stage3Sec;
+    const stage1Name = "Этап 1: генерация булевых запросов";
+    const stage2Name = "Этап 2: поиск в HH";
+    const stage3Name = "Этап 3: постобработка результатов";
+    startProgress(stage1Name, stage1Sec, stage2Name, stage2Sec, stage3Name, stage3Sec, totalSec);
     try {
       const data = await api("/api/search", {
         request_text: requestText,
@@ -946,14 +1067,33 @@ def index() -> str:
       state.candidatesByLevel = data.candidates_by_level;
       state.foundCounts = data.found_counts;
       state.selectedLevel = pickBestLevelByCandidates();
+      state.hasTrafficLightRun = false;
+      revokeExcelBlobUrl();
 
       renderLevelPicker(state.foundCounts);
       el("results").style.display = "block";
       renderCandidates();
       renderTrafficLightTable([]);
 
+      if (el("exportExcel")?.checked) {
+        try {
+          await prebuildExcel();
+        } catch (e) {
+          setStatus("Поиск завершён, но Excel не собран: " + e.message);
+        }
+      } else {
+        const btnXls = el("btnDownloadExcel");
+        if (btnXls) btnXls.disabled = true;
+      }
+
+      stopProgress();
+      el("progressStage").textContent = "";
+      el("progressTimes").textContent = "";
       setStatus("Готово.");
     } catch (e) {
+      stopProgress();
+      el("progressStage").textContent = "";
+      el("progressTimes").textContent = "";
       setStatus("Ошибка: " + e.message);
     } finally { setBusy(false); }
   };
@@ -997,12 +1137,24 @@ def index() -> str:
       state.candidatesByLevel = data.candidates_by_level;
       state.foundCounts = data.found_counts;
       state.selectedLevel = pickBestLevelByCandidates();
+      state.hasTrafficLightRun = true;
+      revokeExcelBlobUrl();
 
       renderLevelPicker(state.foundCounts);
       el("results").style.display = "block";
       renderCandidates();
 
       renderTrafficLightTable(data.traffic_light_candidates || []);
+      if (el("exportExcel")?.checked) {
+        try {
+          await prebuildExcel();
+        } catch (e) {
+          setStatus("Светофор завершён, но Excel не собран: " + e.message);
+        }
+      } else {
+        const btnXls = el("btnDownloadExcel");
+        if (btnXls) btnXls.disabled = true;
+      }
       stopProgress();
       el("progressStage").textContent = "";
       el("progressTimes").textContent = "";
@@ -1036,6 +1188,32 @@ def index() -> str:
       setStatus("Не удалось загрузить prompt файлы");
     }
   });
+
+  const btnX = el("btnDownloadExcel");
+  if (btnX) {
+    btnX.onclick = () => { downloadExcel(); };
+  }
+  const exportCb = el("exportExcel");
+  if (exportCb) {
+    exportCb.onchange = async () => {
+      if (!exportCb.checked) {
+        revokeExcelBlobUrl();
+        const btnXls = el("btnDownloadExcel");
+        if (btnXls) btnXls.disabled = true;
+        return;
+      }
+      if (!state.candidatesByLevel) {
+        const btnXls = el("btnDownloadExcel");
+        if (btnXls) btnXls.disabled = true;
+        return;
+      }
+      try {
+        await prebuildExcel();
+      } catch (e) {
+        setStatus("Ошибка Excel: " + e.message);
+      }
+    };
+  }
 
 </script>
 </body>
