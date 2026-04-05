@@ -1,18 +1,44 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, Mapping, Self
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 LevelName = Literal["Уровень 1", "Уровень 2", "Уровень 3"]
 TokenSource = Literal["ssp"]
 
 
+def normalize_level_queries(override: Mapping[str, str] | None) -> dict[LevelName, str]:
+    """Приводит переданные булевы запросы к полному набору уровней (пустые строки для отсутствующих)."""
+    base: dict[LevelName, str] = {"Уровень 1": "", "Уровень 2": "", "Уровень 3": ""}
+    if not override:
+        return base
+    for k in base:
+        if k in override and override[k] is not None:
+            base[k] = str(override[k])
+    return base
+
+
 class GenerateQueriesRequest(BaseModel):
-    request_text: str = Field(..., description="Текст требований/запроса пользователя")
+    request_text: str = Field(
+        default="",
+        description="Текст требований для LLM; при передаче queries_override может быть пустым.",
+    )
     system_prompt_override: str | None = None
     user_prompt_override: str | None = None
+    queries_override: dict[LevelName, str] | None = Field(
+        None,
+        description="Если задано, LLM не вызывается; возвращаются эти булевы запросы (без генерации).",
+    )
+
+    @model_validator(mode="after")
+    def _require_text_unless_override(self) -> Self:
+        if self.queries_override is not None:
+            return self
+        if not (self.request_text or "").strip():
+            raise ValueError("request_text is required when queries_override is not set")
+        return self
 
 
 class GenerateQueriesResponse(BaseModel):
@@ -37,7 +63,10 @@ class Candidate(BaseModel):
 
 
 class SearchRequest(BaseModel):
-    request_text: str
+    request_text: str = Field(
+        default="",
+        description="Текст вакансии/требований; для LLM и контекста HH. При queries_override может быть пустым.",
+    )
     selected_level: LevelName = "Уровень 2"
     candidates_limit: int = Field(20, ge=1, le=200, description="Кол-во кандидатов в таблице")
 
@@ -45,6 +74,14 @@ class SearchRequest(BaseModel):
     professional_roles: list[str] | None = None
     system_prompt_override: str | None = None
     user_prompt_override: str | None = None
+    queries_override: dict[LevelName, str] | None = Field(
+        None,
+        description="Готовые булевы запросы по уровням; если задано, шаг генерации через LLM пропускается.",
+    )
+    include_excel: bool = Field(
+        False,
+        description="Если true, к JSON добавляется excel_base64 (+ excel_filename). По умолчанию только JSON.",
+    )
 
     # Filter params for "job stability" stage in traffic light.
     min_stay_months: int = Field(3, ge=1, le=240, description="Минимальный срок работы на одном месте (мес)")
@@ -73,6 +110,14 @@ class SearchRequest(BaseModel):
         description="Готовые кандидаты Светофора из UI для экспорта в Excel без повторного пересчёта",
     )
 
+    @model_validator(mode="after")
+    def _require_text_unless_queries_override(self) -> Self:
+        if self.queries_override is not None:
+            return self
+        if not (self.request_text or "").strip():
+            raise ValueError("request_text is required when queries_override is not set")
+        return self
+
 
 class SearchResponse(BaseModel):
     llm_raw: Any | None = None
@@ -82,6 +127,8 @@ class SearchResponse(BaseModel):
     selected_level: LevelName
     token_source_used: TokenSource
     candidates_by_level: dict[LevelName, list[Candidate]]
+    excel_base64: str | None = Field(None, description="Заполняется при include_excel=true")
+    excel_filename: str | None = None
 
 
 class TrafficLightRequirement(BaseModel):
@@ -118,4 +165,6 @@ class SvetoforResponse(BaseModel):
 
     # Кандидаты, отсортированные по ColorScore (пока для теста может быть <= 1).
     traffic_light_candidates: list[TrafficLightCandidate]
+    excel_base64: str | None = Field(None, description="Заполняется при include_excel=true")
+    excel_filename: str | None = None
 

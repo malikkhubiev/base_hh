@@ -8,6 +8,111 @@
 
 ---
 
+## Документация: workflow, архитектура, интерфейс, API, тесты
+
+| Тема | Где подробнее |
+|------|----------------|
+| Пайплайн «булевы → HH → светофор» | раздел **Workflow (логика)** ниже, §2 «Как это работает», §5 контракты |
+| Архитектура модулей | диаграмма ниже, §6 «Ключевые модули» |
+| Веб-интерфейс | §**Интерфейс**, §8 запуск, §9 сценарии |
+| REST API | §4 маршруты, **`openapi.yaml`**, `/docs` |
+| Автотесты | §**Тесты** |
+
+### Архитектура (визуально)
+
+Сервис собран как один FastAPI-приложение с отдельными роутерами: UI (HTML/JS в ответах), workflow (`/api`), чат-бот (`/api/chat_bot`). Данные для поиска идут через LLM-клиент и HH-клиент; результаты поиска могут писаться в SQLite (`log_store`).
+
+```mermaid
+flowchart TB
+  subgraph client["Клиент"]
+    Browser["Браузер"]
+  end
+  subgraph fastapi["FastAPI app.main"]
+    UI["routes/ui.py\nGET /, /ui/bot"]
+    WF["routes/workflow.py\n/api/*"]
+    CB["routes/chat_bot_*.py\n/api/chat_bot/*"]
+  end
+  subgraph services["Сервисы"]
+    QG["QueryGenerator + LLMClient"]
+    HS["HHSearchService + HHClient"]
+    TL["TrafficLightService"]
+    JS["job_stability"]
+    XLS["excel_export"]
+  end
+  subgraph ext["Внешние системы"]
+    LLM["LLM endpoint"]
+    HHAPI["api.hh.ru"]
+    SSP["SSP token URL"]
+  end
+  Browser --> UI
+  Browser --> WF
+  Browser --> CB
+  WF --> QG
+  WF --> HS
+  WF --> TL
+  WF --> JS
+  WF --> XLS
+  QG --> LLM
+  HS --> HHAPI
+  HS --> SSP
+  TL --> LLM
+  CB --> HHAPI
+```
+
+### Workflow (логика)
+
+Типичный сценарий без браузера: сначала получить булевы запросы (`POST /api/generate_queries` или сразу передать `queries_override`), затем выполнить поиск (`POST /api/search`). Опционально — оценка «светофор» по top-X (`POST /api/svetofor`) и выгрузка Excel (`POST /api/export_excel` или `include_excel` в JSON).
+
+```mermaid
+sequenceDiagram
+  participant U as Клиент
+  participant API as FastAPI /api
+  participant LLM as LLM
+  participant HH as HH API
+  U->>API: request_text или queries_override
+  alt нет queries_override
+    API->>LLM: генерация Уровень 1/2/3
+    LLM-->>API: llm_raw, строки запросов
+  end
+  API->>HH: поиск резюме по уровням
+  HH-->>API: found, items
+  opt светофор
+    API->>HH: резюме по id
+    API->>LLM: оценка требований
+  end
+  API-->>U: JSON или XLSX
+```
+
+### Интерфейс
+
+| URL | Назначение |
+|-----|------------|
+| `GET /` | Основной UI: текст вакансии, генерация булевых запросов, поиск HH, таблица кандидатов, светофор, экспорт. |
+| `GET /ui/bot` | UI чат-бота: подписки webhook, создание чата, polling, журнал событий. |
+
+Оба интерфейса работают поверх тех же API, что описаны для машинных клиентов; см. §9 пользовательские сценарии.
+
+### API и OpenAPI
+
+- Интерактивная схема приложения: **`/docs`** (Swagger UI), также **`GET /openapi.json`** — схема только **этого** сервиса.
+- Файл **[`openapi.yaml`](openapi.yaml)** в репозитории — **один файл**, внутри **два YAML-документа**, разделённых строкой `---`:
+  1. **HH Optimizer API** — эндпоинты FastAPI (`/api/...`, часть описаний чат-бота и т.д.), то же по смыслу, что `/openapi.json`.
+  2. **HeadHunter API** — полная официальная спецификация `https://api.hh.ru` (справочник полей и путей HH). Нужна, чтобы сопоставлять ответы HH с описанием схем при разработке и отладке.
+
+Просмотрщики OpenAPI, которые читают только первый документ, по-прежнему корректно показывают API сервиса; второй документ удобно открывать в IDE или в отдельной вкладке Redoc/Swagger как справочник HH.
+
+### Тесты
+
+Запуск всех юнит-тестов из корня репозитория:
+
+```bash
+pytest tests/
+```
+
+Конфигурация: [`pytest.ini`](pytest.ini) (`pythonpath = .`). Покрытие включает: валидацию Pydantic-схем, `job_stability`, `HHSearchService`, `LLMClient`, генератор запросов, экспорт Excel, хелперы `workflow`, HTTP-эндпоинты workflow с подменой `HHSearchService` / async-светофора, UI-маршруты `GET /` и `GET /ui/bot`, чат-бот (сервис и API с моками), `SqliteLogStore`, `SqliteChatBotStore`, целостность объединённого `openapi.yaml`, существующие тесты светофора в `test_traffic_light_service.py`.
+
+---
+
 ## 1. Возможности
 
 - Генерация 3 уровней boolean-запросов через LLM (`Уровень 1/2/3`).
@@ -84,19 +189,32 @@ hh_chat_bot.sqlite
 
 ## 4. API маршруты
 
+Машиночитаемая спецификация сервиса: файл [`openapi.yaml`](openapi.yaml) — **первый** YAML-документ внутри файла (OpenAPI 3); второй документ в том же файле — справочник HeadHunter API (см. раздел **«API и OpenAPI»** выше). Автогенерируемая схема приложения — в Swagger UI (`/docs`) и `GET /openapi.json` (только FastAPI, без второго документа).
+
 ### UI маршруты
 
-- `GET /` - основной UI поиска/светофора.
-- `GET /ui/bot` - UI чат-бота.
+- `GET /` — основной UI поиска/светофора.
+- `GET /ui/bot` — UI чат-бота.
 
-### Workflow API (`/api`)
+### Workflow API (`/api`) — полный сценарий без браузера
 
-- `GET /api/default_request` - текст запроса по умолчанию (`txt/request.txt`).
-- `GET /api/system_prompt` - системный prompt.
-- `GET /api/user_prompt` - пользовательский prompt.
-- `POST /api/generate_queries` - только генерация 3 булевых уровней.
-- `POST /api/search` - генерация + HH поиск кандидатов.
-- `POST /api/svetofor` - генерация + HH поиск + светофор-оценка.
+Цепочка по смыслу: **булевы запросы** → **поиск HH** → **светофор** (опционально). Эндпоинты можно вызывать по отдельности или комбинировать.
+
+| Метод | Путь | Назначение |
+|--------|------|------------|
+| `GET` | `/api/default_request` | Текст «запроса по умолчанию» из `txt/request.txt` |
+| `GET` | `/api/system_prompt` | Текст системного промпта для генерации булевых запросов |
+| `GET` | `/api/user_prompt` | Шаблон пользовательского промпта (с плейсхолдером под вакансию) |
+| `POST` | `/api/generate_queries` | Только этап LLM: три булевых уровня (или подстановка готовых `queries_override`) |
+| `POST` | `/api/search` | Булевы запросы + поиск в HH; опционально Excel в JSON (`include_excel`) |
+| `POST` | `/api/svetofor` | Как поиск + оценка «светофор» по первым `svetofor_top_x` кандидатов; опционально Excel в JSON |
+| `POST` | `/api/export_excel` | Тот же пайплайн, ответ — **бинарный** `.xlsx` (скачивание файла), не JSON |
+
+**Передача булевых запросов без LLM:** в теле `POST /api/search`, `/api/svetofor`, `/api/export_excel` и опционально `/api/generate_queries` укажите `queries_override` — объект с ключами `Уровень 1`, `Уровень 2`, `Уровень 3`. Тогда вызов LLM для генерации булевых строк **не выполняется**, `llm_raw` в ответе будет `null`. Поле `request_text` в этом режиме может быть пустым строкой, но для контекста HH (фильтры, светофор) обычно имеет смысл передать текст вакансии.
+
+**Excel в JSON:** у `POST /api/search` и `POST /api/svetofor` установите `include_excel: true`. В ответ добавятся `excel_base64` и `excel_filename` (книга в памяти, закодированная в Base64). По умолчанию `include_excel: false` — только JSON.
+
+**Скачать Excel отдельно:** `POST /api/export_excel` с тем же телом, что и поиск (включая `include_traffic_light`, `svetofor_top_x`, `traffic_light_candidates_for_excel` при необходимости). Ответ — поток `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`.
 
 ### Chat Bot API (`/api/chat_bot`)
 
@@ -112,46 +230,133 @@ hh_chat_bot.sqlite
 - `GET /api/chat_bot/events`
 - `POST /api/chat_bot/webhook`
 
+Подробные тела запросов/ответов — в [`openapi.yaml`](openapi.yaml).
+
 ---
 
-## 5. Контракты запросов/ответов (основное)
+## 5. Контракты workflow: тело `SearchRequest` (общее для search / svetofor / export_excel)
 
-См. точные схемы в `app/models/schemas.py`.
+Типы и ограничения заданы в `app/models/schemas.py`. Ниже — смысл полей.
 
-### `POST /api/generate_queries`
+### Обязательные условия
 
-Вход:
-- `request_text: str`
-- `system_prompt_override: str | null`
-- `user_prompt_override: str | null`
+- Если **`queries_override` не задан**, поле **`request_text`** должно содержать непустой текст (после trim) — иначе валидация вернёт ошибку.
+- Если задан **`queries_override`**, **`request_text`** может быть пустым.
 
-Выход:
-- `llm_raw`
-- `queries` (`Уровень 1`, `Уровень 2`, `Уровень 3`)
+### Поля запроса
 
-### `POST /api/search`
+| Поле | Обяз. | По умолчанию | Описание |
+|------|--------|----------------|----------|
+| `request_text` | Условно* | `""` | Текст вакансии / требований; для LLM, HH и светофора |
+| `queries_override` | нет | `null` | Готовые булевы строки по трём уровням — без вызова LLM |
+| `selected_level` | нет | `Уровень 2` | Уровень для отображения/отбора в поиске |
+| `candidates_limit` | нет | `20` | Сколько резюме на уровень запрашивать у HH (1–200) |
+| `area_id` | нет | из env | Регион HH |
+| `professional_roles` | нет | из env | Список id проф. ролей HH |
+| `system_prompt_override` | нет | `null` | Замена системного промпта при генерации булевых запросов |
+| `user_prompt_override` | нет | `null` | Замена шаблона пользовательского промпта (`{vac_reqs}`) |
+| `include_excel` | нет | `false` | Только для **`/api/search`** и **`/api/svetofor`**: добавить в JSON `excel_base64` + `excel_filename` |
+| `min_stay_months` | нет | `3` | Мин. срок на одном месте (мес), фильтр перед светофором |
+| `allowed_short_jobs` | нет | `2` | Сколько «коротких» мест допустимо (см. режим прыгуна) |
+| `jump_mode` | нет | `consecutive` | `consecutive` — подряд идущие короткие места; `total` — суммарно коротких |
+| `max_not_employed_months` | нет | `6` | Макс. «не в деле» с конца последней работы (мес) |
+| `svetofor_top_x` | нет | `20` | Первые X кандидатов выбранного уровня для светофора / Excel со светофором |
+| `include_traffic_light` | нет | `false` | Для **`/api/export_excel`**: пересчитать светофор и заполнить лист «Светофор» |
+| `traffic_light_candidates_for_excel` | нет | `null` | Готовые объекты светофора из UI — без повторного LLM при экспорте |
 
-Вход:
-- `request_text: str`
-- `selected_level: str | null`
-- `area_id: int | null`
-- `professional_roles: list[str] | null`
-- `candidates_limit: int`
-- опционально: `min_stay_months`, `allowed_short_jobs`, `jump_mode`, `max_not_employed_months`, `svetofor_top_x`
+\* Обязательно, если нет `queries_override`.
 
-Выход:
-- `llm_raw`
-- `queries`
-- `queries_with_exclusions`
-- `found_counts`
-- `selected_level`
-- `token_source_used`
-- `candidates_by_level`
+### Ответ `POST /api/search` (`SearchResponse`)
 
-### `POST /api/svetofor`
+| Поле | Тип | Описание |
+|------|-----|----------|
+| `llm_raw` | any \| null | Сырой ответ LLM при генерации булевых; `null` при `queries_override` |
+| `queries` | object | Три уровня булевых строк |
+| `queries_with_exclusions` | object | Запросы с доп. исключениями (как уходит в HH) |
+| `found_counts` | object | Число найденных по уровням |
+| `selected_level` | string | Выбранный уровень |
+| `token_source_used` | string | Источник токена HH (`ssp`) |
+| `candidates_by_level` | object | Нормализованные кандидаты по уровням |
+| `excel_base64` | string \| null | Если `include_excel: true` |
+| `excel_filename` | string \| null | Имя файла для сохранения |
 
-Как `/api/search` + поле:
-- `traffic_light_candidates` (итоговая оценка кандидатов).
+### Ответ `POST /api/svetofor` (`SvetoforResponse`)
+
+Все поля как у поиска, плюс:
+
+| Поле | Описание |
+|------|----------|
+| `traffic_light_candidates` | Список кандидатов с оценкой, требованиями и `color_score_percent` |
+| `excel_base64`, `excel_filename` | При `include_excel: true` |
+
+### `POST /api/generate_queries` (`GenerateQueriesRequest` / `GenerateQueriesResponse`)
+
+**Вход:** `request_text` (обязателен, если нет `queries_override`), `system_prompt_override`, `user_prompt_override`, опционально `queries_override`.
+
+**Выход:** `llm_raw`, `queries`.
+
+### Примеры
+
+**1) Только JSON, поиск с генерацией булевых запросов**
+
+```http
+POST /api/search HTTP/1.1
+Content-Type: application/json
+
+{
+  "request_text": "Python backend, Django, 3+ года",
+  "candidates_limit": 20,
+  "include_excel": false
+}
+```
+
+Фрагмент ответа (сокращённо):
+
+```json
+{
+  "llm_raw": { "...": "..." },
+  "queries": {
+    "Уровень 1": "...",
+    "Уровень 2": "...",
+    "Уровень 3": "..."
+  },
+  "found_counts": { "Уровень 1": 0, "Уровень 2": 12, "Уровень 3": 3 },
+  "selected_level": "Уровень 2",
+  "candidates_by_level": { "Уровень 2": [ { "id": "...", "title": "..." } ] }
+}
+```
+
+**2) Поиск с готовыми булевыми запросами и Excel в JSON**
+
+```json
+{
+  "request_text": "Описание для светофора и HH",
+  "queries_override": {
+    "Уровень 1": "NOT (head OR lead) AND python",
+    "Уровень 2": "python AND django",
+    "Уровень 3": "python django postgres"
+  },
+  "include_excel": true,
+  "candidates_limit": 20
+}
+```
+
+В ответе помимо полей поиска появятся `excel_base64` и `excel_filename`.
+
+**3) Светофор с параметрами «как в UI»**
+
+```json
+{
+  "request_text": "...",
+  "candidates_limit": 20,
+  "svetofor_top_x": 20,
+  "min_stay_months": 3,
+  "allowed_short_jobs": 2,
+  "jump_mode": "consecutive",
+  "max_not_employed_months": 6,
+  "include_excel": false
+}
+```
 
 ---
 
@@ -299,10 +504,9 @@ uvicorn app.main:app --reload
 
 ## 13. Roadmap (что обычно развивают дальше)
 
-- Экспорт результатов в Excel.
 - Прогресс-бар этапов поиска в UI.
 - Улучшение observability (метрики этапов, latency breakdown).
-- E2E/интеграционные тесты для workflow и чат-бота.
+- Интеграционные/E2E тесты с поднятым mock-сервером LLM/HH (юнит-тесты в `tests/` уже покрывают основные модули).
 - Расширение правил ранжирования кандидатов под конкретные домены.
 
 ---

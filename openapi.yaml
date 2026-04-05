@@ -1,3 +1,662 @@
+openapi: 3.0.3
+info:
+  title: HH Optimizer API
+  description: |
+    Workflow (булевы запросы → HH → светофор) и HH Chat Bot.
+    Спецификация соответствует реализации FastAPI (`app/api/routes/workflow.py`, `chat_bot_api.py`).
+  version: "1.0.0"
+
+servers:
+  - url: http://127.0.0.1:8000
+    description: Локальный запуск (uvicorn)
+
+tags:
+  - name: workflow
+    description: Поиск резюме, генерация булевых запросов, светофор, Excel
+  - name: chat_bot
+    description: Webhook, чаты HH, polling
+
+paths:
+  /api/default_request:
+    get:
+      tags: [workflow]
+      summary: Текст запроса по умолчанию
+      description: Содержимое `txt/request.txt` (plain text).
+      responses:
+        "200":
+          description: Текст
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: "Требования к кандидату..."
+
+  /api/system_prompt:
+    get:
+      tags: [workflow]
+      summary: Системный промпт для генерации булевых запросов
+      responses:
+        "200":
+          description: Plain text
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/user_prompt:
+    get:
+      tags: [workflow]
+      summary: Шаблон пользовательского промпта
+      description: Обычно содержит плейсолдер `{vac_reqs}` под текст вакансии.
+      responses:
+        "200":
+          description: Plain text
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/generate_queries:
+    post:
+      tags: [workflow]
+      summary: Получить булевы запросы (LLM или подстановка)
+      description: |
+        Если передан `queries_override`, LLM не вызывается, возвращаются переданные строки.
+        Иначе вызывается LLM с опциональными `system_prompt_override` / `user_prompt_override`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateQueriesRequest"
+            examples:
+              llm:
+                summary: Генерация через LLM
+                value:
+                  request_text: "Python backend, 3+ года"
+              override:
+                summary: Готовые запросы без LLM
+                value:
+                  request_text: ""
+                  queries_override:
+                    Уровень 1: "python NOT head"
+                    Уровень 2: "python AND django"
+                    Уровень 3: "python django asyncio"
+      responses:
+        "200":
+          description: Булевы запросы и опционально сырой ответ LLM
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenerateQueriesResponse"
+              example:
+                llm_raw: null
+                queries:
+                  Уровень 1: "..."
+                  Уровень 2: "..."
+                  Уровень 3: "..."
+        "422":
+          description: Ошибка валидации (например, пустой `request_text` без `queries_override`)
+
+  /api/search:
+    post:
+      tags: [workflow]
+      summary: Поиск в HH (булевы запросы + выдача кандидатов)
+      description: |
+        По умолчанию сначала генерируются булевы запросы (если нет `queries_override`), затем поиск в HH.
+        При `include_excel: true` в JSON добавляются поля `excel_base64` и `excel_filename`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchRequest"
+      responses:
+        "200":
+          description: Результат поиска
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResponse"
+        "422":
+          description: Ошибка валидации
+
+  /api/svetofor:
+    post:
+      tags: [workflow]
+      summary: Поиск + светофор
+      description: |
+        Включает те же шаги, что поиск, затем для первых `svetofor_top_x` кандидатов выбранного уровня —
+        загрузка резюме, фильтры стабильности работы, оценка LLM (светофор).
+        При `include_excel: true` в JSON добавляется Excel в Base64.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchRequest"
+      responses:
+        "200":
+          description: Поиск + список кандидатов светофора
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SvetoforResponse"
+        "422":
+          description: Ошибка валидации
+
+  /api/export_excel:
+    post:
+      tags: [workflow]
+      summary: Скачать Excel (бинарный ответ)
+      description: |
+        Тело как у `/api/search`. При `include_traffic_light: true` можно передать готовый список
+        `traffic_light_candidates_for_excel` или задать `svetofor_top_x` для пересчёта светофора на сервере.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchRequest"
+      responses:
+        "200":
+          description: Файл .xlsx
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: attachment; filename="hh_search_20260101_120000.xlsx"
+        "500":
+          description: Нет зависимости xlsxwriter на сервере
+
+  /api/chat_bot/webhook/subscription/create:
+    post:
+      tags: [chat_bot]
+      summary: Создать подписку webhook HH
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookSubscriptionCreateRequest"
+      responses:
+        "200":
+          description: Успех
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  subscription:
+                    type: object
+
+  /api/chat_bot/webhook/subscription/list:
+    get:
+      tags: [chat_bot]
+      summary: Список подписок webhook
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  subscriptions:
+                    type: array
+                    items: {}
+
+  /api/chat_bot/webhook/subscription/cancel:
+    post:
+      tags: [chat_bot]
+      summary: Отменить подписку
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subscription_id]
+              properties:
+                subscription_id:
+                  type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+  /api/chat_bot/chat/create:
+    post:
+      tags: [chat_bot]
+      summary: Создать или получить чат по резюме
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatCreateRequest"
+      responses:
+        "200":
+          description: Состояние/результат создания чата
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/chat_bot/chat/send:
+    post:
+      tags: [chat_bot]
+      summary: Отправить сообщение в чат
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatSendRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/chat_bot/poller/start:
+    post:
+      tags: [chat_bot]
+      summary: Запустить фоновый polling
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PollerStartRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/chat_bot/poller/stop:
+    post:
+      tags: [chat_bot]
+      summary: Остановить polling
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PollerStopRequest"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/chat_bot/poller/once:
+    post:
+      tags: [chat_bot]
+      summary: Один проход polling
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/chat_bot/state:
+    get:
+      tags: [chat_bot]
+      summary: Состояние чат-бота
+      parameters:
+        - in: query
+          name: resume_url_or_hash
+          schema:
+            type: string
+        - in: query
+          name: chat_id
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/chat_bot/events:
+    get:
+      tags: [chat_bot]
+      summary: Последние события
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            default: 30
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /api/chat_bot/webhook:
+    post:
+      tags: [chat_bot]
+      summary: Приём callback от HH (CHAT_MESSAGE_CREATED)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+
+components:
+  schemas:
+    LevelQueries:
+      type: object
+      required: [Уровень 1, Уровень 2, Уровень 3]
+      properties:
+        Уровень 1:
+          type: string
+        Уровень 2:
+          type: string
+        Уровень 3:
+          type: string
+
+    GenerateQueriesRequest:
+      type: object
+      properties:
+        request_text:
+          type: string
+          default: ""
+          description: Текст для LLM; при `queries_override` может быть пустым.
+        system_prompt_override:
+          type: string
+          nullable: true
+        user_prompt_override:
+          type: string
+          nullable: true
+        queries_override:
+          $ref: "#/components/schemas/LevelQueries"
+          nullable: true
+      description: |
+        Либо `request_text` (без пустоты), либо задан `queries_override`.
+
+    GenerateQueriesResponse:
+      type: object
+      properties:
+        llm_raw:
+          nullable: true
+          description: Сырой ответ LLM; null при подстановке `queries_override`
+        queries:
+          $ref: "#/components/schemas/LevelQueries"
+
+    SearchRequest:
+      type: object
+      properties:
+        request_text:
+          type: string
+          default: ""
+        queries_override:
+          $ref: "#/components/schemas/LevelQueries"
+          nullable: true
+        selected_level:
+          type: string
+          enum: [Уровень 1, Уровень 2, Уровень 3]
+          default: Уровень 2
+        candidates_limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 20
+        area_id:
+          type: integer
+          nullable: true
+        professional_roles:
+          type: array
+          items:
+            type: string
+          nullable: true
+        system_prompt_override:
+          type: string
+          nullable: true
+        user_prompt_override:
+          type: string
+          nullable: true
+        include_excel:
+          type: boolean
+          default: false
+          description: Только для /api/search и /api/svetofor — добавить excel_base64 в JSON.
+        min_stay_months:
+          type: integer
+          minimum: 1
+          maximum: 240
+          default: 3
+        allowed_short_jobs:
+          type: integer
+          minimum: 0
+          maximum: 50
+          default: 2
+        jump_mode:
+          type: string
+          enum: [consecutive, total]
+          default: consecutive
+        max_not_employed_months:
+          type: integer
+          minimum: 0
+          maximum: 240
+          default: 6
+        svetofor_top_x:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 20
+        include_traffic_light:
+          type: boolean
+          default: false
+          description: В основном для /api/export_excel — строить лист «Светофор».
+        traffic_light_candidates_for_excel:
+          type: array
+          nullable: true
+          items:
+            $ref: "#/components/schemas/TrafficLightCandidate"
+
+    Candidate:
+      type: object
+      additionalProperties: true
+      description: Нормализованная карточка резюме из HH
+
+    SearchResponse:
+      type: object
+      properties:
+        llm_raw:
+          nullable: true
+        queries:
+          $ref: "#/components/schemas/LevelQueries"
+        queries_with_exclusions:
+          $ref: "#/components/schemas/LevelQueries"
+        found_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        selected_level:
+          type: string
+        token_source_used:
+          type: string
+          enum: [ssp]
+        candidates_by_level:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: "#/components/schemas/Candidate"
+        excel_base64:
+          type: string
+          nullable: true
+          description: Base64-кодированная книга Excel при include_excel=true
+        excel_filename:
+          type: string
+          nullable: true
+
+    TrafficLightRequirement:
+      type: object
+      properties:
+        requirement:
+          type: string
+        resume_evidence:
+          type: string
+        match_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        difference_comment:
+          type: string
+
+    TrafficLightCandidate:
+      type: object
+      properties:
+        id:
+          type: string
+        candidate_name:
+          type: string
+        title:
+          type: string
+          nullable: true
+        location:
+          type: string
+          nullable: true
+        resume_url:
+          type: string
+          nullable: true
+        color_score_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+        requirements:
+          type: array
+          items:
+            $ref: "#/components/schemas/TrafficLightRequirement"
+        candidate_prj_exp:
+          type: string
+          nullable: true
+        debug_prompt:
+          type: string
+          nullable: true
+        debug_llm_raw:
+          nullable: true
+
+    SvetoforResponse:
+      allOf:
+        - $ref: "#/components/schemas/SearchResponse"
+        - type: object
+          required: [traffic_light_candidates]
+          properties:
+            traffic_light_candidates:
+              type: array
+              items:
+                $ref: "#/components/schemas/TrafficLightCandidate"
+            excel_base64:
+              type: string
+              nullable: true
+            excel_filename:
+              type: string
+              nullable: true
+
+    WebhookSubscriptionCreateRequest:
+      type: object
+      required: [callback_url]
+      properties:
+        callback_url:
+          type: string
+          format: uri
+
+    ChatCreateRequest:
+      type: object
+      required: [resume_url_or_hash, first_message]
+      properties:
+        resume_url_or_hash:
+          type: string
+        first_message:
+          type: string
+        system_prompt:
+          type: string
+          nullable: true
+        user_prompt_template:
+          type: string
+          nullable: true
+        target_text:
+          type: string
+          nullable: true
+        auto_reply_enabled:
+          type: boolean
+          default: true
+        polling_enabled:
+          type: boolean
+          default: true
+        polling_interval_sec:
+          type: integer
+          minimum: 5
+          maximum: 600
+          default: 30
+
+    ChatSendRequest:
+      type: object
+      required: [text]
+      properties:
+        chat_id:
+          type: string
+          nullable: true
+        resume_url_or_hash:
+          type: string
+          nullable: true
+        text:
+          type: string
+
+    PollerStartRequest:
+      type: object
+      properties:
+        resume_url_or_hash:
+          type: string
+          nullable: true
+        chat_id:
+          type: string
+          nullable: true
+        interval_sec:
+          type: integer
+          minimum: 5
+          maximum: 600
+          default: 30
+
+    PollerStopRequest:
+      type: object
+      properties:
+        resume_url_or_hash:
+          type: string
+          nullable: true
+
+---
+
+# YAML multi-document: документ 2 — HeadHunter API (api.hh.ru), справочная спецификация.
+
 components:
   examples:
     AddEmployerManager:

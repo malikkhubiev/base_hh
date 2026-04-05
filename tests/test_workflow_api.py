@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from fastapi.testclient import TestClient
+
+
+def _override_body():
+    return {
+        "request_text": "Python",
+        "queries_override": {
+            "Уровень 1": "q1",
+            "Уровень 2": "q2",
+            "Уровень 3": "q3",
+        },
+    }
+
+
+def test_api_default_request(client: TestClient) -> None:
+    r = client.get("/api/default_request")
+    assert r.status_code == 200
+    assert len(r.text) > 0
+
+
+def test_api_generate_queries_override(client: TestClient) -> None:
+    r = client.post(
+        "/api/generate_queries",
+        json={
+            "request_text": "",
+            "queries_override": {"Уровень 1": "a", "Уровень 2": "b", "Уровень 3": "c"},
+        },
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["llm_raw"] is None
+    assert data["queries"]["Уровень 2"] == "b"
+
+
+@patch("app.api.routes.workflow.HHSearchService")
+def test_api_search_mocked(mock_hh_cls, client: TestClient) -> None:
+    inst = MagicMock()
+    mock_hh_cls.return_value = inst
+    inst.search_counts_and_candidates.return_value = (
+        {"Уровень 1": 0, "Уровень 2": 2, "Уровень 3": 0},
+        {
+            "Уровень 1": [],
+            "Уровень 2": [{"id": "1", "title": "Dev", "skills": [], "tags": []}],
+            "Уровень 3": [],
+        },
+        {"Уровень 1": "x", "Уровень 2": "y", "Уровень 3": "z"},
+    )
+    r = client.post("/api/search", json=_override_body())
+    assert r.status_code == 200
+    data = r.json()
+    assert data["found_counts"]["Уровень 2"] == 2
+    assert data["candidates_by_level"]["Уровень 2"][0]["id"] == "1"
+
+
+@patch("app.api.routes.workflow._collect_traffic_light_candidates", new_callable=AsyncMock)
+@patch("app.api.routes.workflow.HHSearchService")
+def test_api_svetofor_mocked(mock_hh_cls, mock_tl, client: TestClient) -> None:
+    inst = MagicMock()
+    mock_hh_cls.return_value = inst
+    inst.search_counts_and_candidates.return_value = (
+        {"Уровень 1": 0, "Уровень 2": 1, "Уровень 3": 0},
+        {
+            "Уровень 1": [],
+            "Уровень 2": [{"id": "1", "title": "T", "first_name": "A", "last_name": "B", "skills": [], "tags": []}],
+            "Уровень 3": [],
+        },
+        {"Уровень 1": "a", "Уровень 2": "b", "Уровень 3": "c"},
+    )
+    mock_tl.return_value = []
+
+    r = client.post("/api/svetofor", json=_override_body())
+    assert r.status_code == 200
+    assert r.json()["traffic_light_candidates"] == []
+
+
+@patch("app.api.routes.workflow.HHSearchService")
+def test_api_export_excel_mocked(mock_hh_cls, client: TestClient) -> None:
+    inst = MagicMock()
+    mock_hh_cls.return_value = inst
+    inst.search_counts_and_candidates.return_value = (
+        {"Уровень 1": 0, "Уровень 2": 1, "Уровень 3": 0},
+        {"Уровень 1": [], "Уровень 2": [{"id": "1"}], "Уровень 3": []},
+        {"Уровень 1": "a", "Уровень 2": "b", "Уровень 3": "c"},
+    )
+    r = client.post("/api/export_excel", json=_override_body())
+    assert r.status_code == 200
+    assert r.headers.get("content-type", "").startswith("application/vnd.openxmlformats")
