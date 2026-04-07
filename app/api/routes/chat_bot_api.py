@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel, Field
 
+from app.core.tracing import trace_step
 from app.services.chat_bot_service import ChatBotService
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,7 @@ class PollerStopRequest(BaseModel):
 
 @router.post("/webhook/subscription/create")
 def webhook_subscription_create(req: WebhookSubscriptionCreateRequest) -> dict[str, Any]:
+    trace_step(logger, "chat_bot_api", "webhook_subscription_create", callback_url=req.callback_url)
     # Register only one action: CHAT_MESSAGE_CREATED.
     sub = service.hh.post_webhook_subscription(url=req.callback_url, action_types=["CHAT_MESSAGE_CREATED"])
     return {"ok": True, "subscription": sub}
@@ -65,18 +67,28 @@ def webhook_subscription_create(req: WebhookSubscriptionCreateRequest) -> dict[s
 
 @router.get("/webhook/subscription/list")
 def webhook_subscription_list() -> dict[str, Any]:
+    trace_step(logger, "chat_bot_api", "webhook_subscription_list")
     subs = service.hh.get_webhook_subscriptions()
     return {"ok": True, "subscriptions": subs}
 
 
 @router.post("/webhook/subscription/cancel")
 def webhook_subscription_cancel(req: WebhookSubscriptionCancelRequest) -> dict[str, Any]:
+    trace_step(logger, "chat_bot_api", "webhook_subscription_cancel", subscription_id=req.subscription_id)
     service.hh.cancel_webhook_subscription(subscription_id=req.subscription_id)
     return {"ok": True}
 
 
 @router.post("/chat/create", response_model=dict)
 def chat_create(req: ChatCreateRequest) -> dict[str, Any]:
+    trace_step(
+        logger,
+        "chat_bot_api",
+        "chat_create",
+        resume_hint=(req.resume_url_or_hash or "")[:120],
+        polling_enabled=req.polling_enabled,
+        auto_reply_enabled=req.auto_reply_enabled,
+    )
     return service.create_or_get_chat(
         resume_url_or_hash=req.resume_url_or_hash,
         first_message=req.first_message,
@@ -91,6 +103,7 @@ def chat_create(req: ChatCreateRequest) -> dict[str, Any]:
 
 @router.post("/chat/send", response_model=dict)
 def chat_send(req: ChatSendRequest) -> dict[str, Any]:
+    trace_step(logger, "chat_bot_api", "chat_send", has_chat_id=bool(req.chat_id), text_len=len(req.text or ""))
     if req.chat_id:
         return {"ok": True, "sent": service.send_text(chat_id=req.chat_id, text=req.text)}
 
@@ -137,6 +150,14 @@ async def _poller_loop() -> None:
 
 @router.post("/poller/start")
 async def poller_start(req: PollerStartRequest, bg: BackgroundTasks) -> dict[str, Any]:
+    trace_step(
+        logger,
+        "chat_bot_api",
+        "poller_start",
+        interval_sec=req.interval_sec,
+        has_resume=bool(req.resume_url_or_hash),
+        has_chat_id=bool(req.chat_id),
+    )
     # Update store flags if user provided interval + resume.
     if req.resume_url_or_hash:
         resume_hash = service.parse_resume_hash(req.resume_url_or_hash)
@@ -168,6 +189,7 @@ async def poller_start(req: PollerStartRequest, bg: BackgroundTasks) -> dict[str
 
 @router.post("/poller/stop")
 async def poller_stop(req: PollerStopRequest) -> dict[str, Any]:
+    trace_step(logger, "chat_bot_api", "poller_stop", has_resume=bool(req.resume_url_or_hash))
     if req.resume_url_or_hash:
         resume_hash = service.parse_resume_hash(req.resume_url_or_hash)
         service.store.set_polling_flags(resume_hash=resume_hash, polling_enabled=False, polling_interval_sec=None)
@@ -182,12 +204,14 @@ async def poller_stop(req: PollerStopRequest) -> dict[str, Any]:
 
 @router.post("/poller/once")
 async def poller_once() -> dict[str, Any]:
+    trace_step(logger, "chat_bot_api", "poller_once")
     res = await asyncio.to_thread(service.poll_once)
     return {"ok": True, "result": res}
 
 
 @router.get("/state")
 def bot_state(resume_url_or_hash: str | None = None, chat_id: str | None = None) -> dict[str, Any]:
+    trace_step(logger, "chat_bot_api", "bot_state", has_resume=bool(resume_url_or_hash), has_chat_id=bool(chat_id))
     if resume_url_or_hash:
         resume_hash = service.parse_resume_hash(resume_url_or_hash)
         st = service.store.get_state_by_resume_hash(resume_hash=resume_hash)
@@ -200,6 +224,7 @@ def bot_state(resume_url_or_hash: str | None = None, chat_id: str | None = None)
 
 @router.get("/events")
 def bot_events(limit: int = 30) -> dict[str, Any]:
+    trace_step(logger, "chat_bot_api", "bot_events", limit=limit)
     events = service.store.list_recent_events(limit=limit)
     return {"ok": True, "events": events}
 
@@ -210,6 +235,13 @@ async def webhook(payload: dict[str, Any]) -> dict[str, Any]:
     HH callback handler for CHAT_MESSAGE_CREATED.
     HH sends: { action_type, id, subscription_id, user_id, payload: { chat_id, message_id, ... } }
     """
+    trace_step(
+        logger,
+        "chat_bot_api",
+        "webhook.received",
+        action_type=payload.get("action_type"),
+        payload_keys=list(payload.keys()),
+    )
     try:
         action_type = payload.get("action_type")
         data = payload.get("payload") or {}

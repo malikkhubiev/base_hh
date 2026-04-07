@@ -14,6 +14,10 @@ def test_build_search_excel_bytes_creates_workbook() -> None:
     t0 = datetime(2026, 4, 5, 12, 0, 0)
     raw, name = build_search_excel_bytes(
         request_text="test vacancy",
+        level_queries={"Уровень 2": "python AND fastapi"},
+        queries_with_exclusions={"Уровень 2": "python AND fastapi NOT junior"},
+        hh_search_urls={"Уровень 2": "https://example.com/hh?q=1"},
+        selected_level="Уровень 2",
         found_counts={"Уровень 2": 2},
         candidates_by_level_raw={
             "Уровень 2": [

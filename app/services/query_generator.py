@@ -5,6 +5,7 @@ import logging
 from typing import Any
 
 from app.clients.llm_client import LLMClient
+from app.core.tracing import trace_step
 from app.utils.file_manager import FileManager
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,14 @@ class QueryGenerator:
         system_prompt_override: str | None = None,
         user_prompt_override: str | None = None,
     ) -> tuple[dict[str, str], Any | None]:
+        trace_step(
+            logger,
+            "query_generator",
+            "generate.start",
+            request_preview=(request_text or "")[:400],
+            has_system_override=system_prompt_override is not None,
+            has_user_override=user_prompt_override is not None,
+        )
         prompt = self._build_prompt(
             request_text,
             system_prompt_override=system_prompt_override,
@@ -47,10 +56,12 @@ class QueryGenerator:
         llm_raw = self.llm.call(prompt_text=prompt, iteration=0)
         empty = {"Уровень 1": "", "Уровень 2": "", "Уровень 3": ""}
         if not llm_raw:
+            trace_step(logger, "query_generator", "generate.empty_llm_response")
             return empty, None
 
         queries = self.llm.extract_queries(llm_raw)
         if not queries:
+            trace_step(logger, "query_generator", "generate.extract_queries_failed", llm_keys=list(llm_raw.keys()) if isinstance(llm_raw, dict) else None)
             return empty, llm_raw
 
         # Нормализация: гарантируем наличие всех трех уровней.
@@ -66,5 +77,6 @@ class QueryGenerator:
         for k in ["Уровень 1", "Уровень 2", "Уровень 3"]:
             safe.setdefault(k, "")
 
+        trace_step(logger, "query_generator", "generate.ok", levels={k: len(v or "") for k, v in safe.items()})
         return safe, llm_raw
 

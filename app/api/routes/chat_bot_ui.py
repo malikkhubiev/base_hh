@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter
 from fastapi.responses import HTMLResponse
 
+from app.core.tracing import trace_step
+
 router = APIRouter()
+_log = logging.getLogger(__name__)
 
 
 @router.get("/ui/bot", response_class=HTMLResponse)
 def bot_ui() -> str:
+    trace_step(_log, "chat_bot_ui", "bot_ui")
     return """
 <!DOCTYPE html>
 <html lang="ru">

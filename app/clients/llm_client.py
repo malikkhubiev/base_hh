@@ -7,6 +7,8 @@ from typing import Any
 
 import requests
 
+from app.core.tracing import trace_step
+
 logger = logging.getLogger(__name__)
 
 
@@ -27,6 +29,15 @@ class LLMClient:
             "temperature": str(temperature),
         }
         iteration_label = iteration + 1 if iteration is not None else "n/a"
+        trace_step(
+            logger,
+            "llm_client",
+            "call.start",
+            iteration=iteration_label,
+            model=model,
+            prompt_len=len(prompt_text or ""),
+            temperature=temperature,
+        )
         try:
             logger.info("Sending LLM request, iteration=%s", iteration_label)
             response = requests.post(
@@ -38,13 +49,16 @@ class LLMClient:
             response.raise_for_status()
             llm_response = response.json()
             logger.info("Received LLM response, keys=%s", list(llm_response.keys()))
+            trace_step(logger, "llm_client", "call.ok", response_keys=list(llm_response.keys()))
             return llm_response
         except Exception:
+            trace_step(logger, "llm_client", "call.failed")
             logger.exception("LLM request failed")
             return None
 
     def extract_queries(self, llm_response: dict[str, Any]) -> dict[str, str] | None:
         """Extract three level queries from possible LLM response shapes."""
+        trace_step(logger, "llm_client", "extract_queries.enter", top_keys=list(llm_response.keys()))
         queries: dict[str, Any] | None = None
         response_text = llm_response.get("response")
         if isinstance(response_text, str):
@@ -66,6 +80,7 @@ class LLMClient:
                         break
 
         if not isinstance(queries, dict):
+            trace_step(logger, "llm_client", "extract_queries.not_dict", queries_type=type(queries).__name__)
             logger.error("Unable to extract level queries from LLM response")
             return None
 
@@ -73,6 +88,7 @@ class LLMClient:
         for key, value in queries.items():
             normalized[str(key)] = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
         logger.info("Extracted level queries: %s", list(normalized.keys()))
+        trace_step(logger, "llm_client", "extract_queries.ok", keys=list(normalized.keys()))
         return normalized
 
     def _parse_json_from_text(self, text: str) -> dict[str, Any] | None:

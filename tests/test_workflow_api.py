@@ -48,6 +48,7 @@ def test_api_search_mocked(mock_hh_cls, client: TestClient) -> None:
             "Уровень 3": [],
         },
         {"Уровень 1": "x", "Уровень 2": "y", "Уровень 3": "z"},
+        {"Уровень 1": "u1", "Уровень 2": "u2", "Уровень 3": "u3"},
     )
     r = client.post("/api/search", json=_override_body())
     assert r.status_code == 200
@@ -69,12 +70,38 @@ def test_api_svetofor_mocked(mock_hh_cls, mock_tl, client: TestClient) -> None:
             "Уровень 3": [],
         },
         {"Уровень 1": "a", "Уровень 2": "b", "Уровень 3": "c"},
+        {"Уровень 1": "u1", "Уровень 2": "u2", "Уровень 3": "u3"},
     )
     mock_tl.return_value = []
 
     r = client.post("/api/svetofor", json=_override_body())
     assert r.status_code == 200
     assert r.json()["traffic_light_candidates"] == []
+
+
+@patch("app.api.routes.workflow._collect_traffic_light_candidates", new_callable=AsyncMock)
+@patch("app.api.routes.workflow.HHSearchService")
+def test_api_traffic_light_from_candidates_mocked(mock_hh_cls, mock_tl, client: TestClient) -> None:
+    inst = MagicMock()
+    mock_hh_cls.return_value = inst
+    mock_tl.return_value = []
+
+    r = client.post(
+        "/api/traffic_light",
+        json={
+            "request_text": "Python",
+            "selected_level": "Уровень 2",
+            "svetofor_top_x": 3,
+            "candidates": [
+                {"id": "1", "title": "Dev", "first_name": "A", "last_name": "B", "skills": [], "tags": []},
+                {"id": "2", "title": "Dev2", "first_name": "C", "last_name": "D", "skills": [], "tags": []},
+            ],
+        },
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["selected_level"] == "Уровень 2"
+    assert data["traffic_light_candidates"] == []
 
 
 @patch("app.api.routes.workflow.HHSearchService")
@@ -85,6 +112,7 @@ def test_api_export_excel_mocked(mock_hh_cls, client: TestClient) -> None:
         {"Уровень 1": 0, "Уровень 2": 1, "Уровень 3": 0},
         {"Уровень 1": [], "Уровень 2": [{"id": "1"}], "Уровень 3": []},
         {"Уровень 1": "a", "Уровень 2": "b", "Уровень 3": "c"},
+        {"Уровень 1": "u1", "Уровень 2": "u2", "Уровень 3": "u3"},
     )
     r = client.post("/api/export_excel", json=_override_body())
     assert r.status_code == 200

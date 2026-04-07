@@ -174,6 +174,35 @@ paths:
         "500":
           description: Нет зависимости xlsxwriter на сервере
 
+  /api/export_excel_ui:
+    post:
+      tags: [workflow]
+      summary: Скачать Excel из данных UI (без HH)
+      description: |
+        UI передаёт уже полученные результаты поиска (queries/urls/counts/candidates) и (опционально)
+        светофоры по уровням. Сервер **не** делает повторный поиск в HH, а только собирает XLSX.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExportExcelUiRequest"
+      responses:
+        "200":
+          description: Файл .xlsx
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: attachment; filename="hh_search_20260101_120000.xlsx"
+        "500":
+          description: Нет зависимости xlsxwriter на сервере
+
   /api/chat_bot/webhook/subscription/create:
     post:
       tags: [chat_bot]
@@ -479,6 +508,44 @@ components:
           nullable: true
           items:
             $ref: "#/components/schemas/TrafficLightCandidate"
+
+    ExportExcelUiRequest:
+      type: object
+      required: [request_text, selected_level, queries, queries_with_exclusions, found_counts, candidates_by_level]
+      properties:
+        request_text:
+          type: string
+          description: Текст вакансии/требований
+        selected_level:
+          type: string
+          enum: [Уровень 1, Уровень 2, Уровень 3]
+          default: Уровень 2
+        queries:
+          $ref: "#/components/schemas/LevelQueries"
+        queries_with_exclusions:
+          $ref: "#/components/schemas/LevelQueries"
+        hh_search_urls:
+          type: object
+          additionalProperties:
+            type: string
+          description: Ссылки на веб-поиск HH
+        found_counts:
+          type: object
+          additionalProperties:
+            type: integer
+        candidates_by_level:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: "#/components/schemas/Candidate"
+        traffic_lights_by_level:
+          nullable: true
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              $ref: "#/components/schemas/TrafficLightCandidate"
 
     Candidate:
       type: object

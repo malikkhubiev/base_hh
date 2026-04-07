@@ -8,6 +8,7 @@ from typing import Any
 from app.clients.llm_client import LLMClient
 from app.core.settings import settings
 from app.models.schemas import TrafficLightCandidate, TrafficLightRequirement
+from app.core.tracing import trace_step
 from app.services.prompts import PromptService
 
 logger = logging.getLogger(__name__)
@@ -122,6 +123,15 @@ class TrafficLightService:
         location: str | None = None,
         resume_url: str | None = None,
     ) -> tuple[TrafficLightCandidate, Any | None]:
+        trace_step(
+            logger,
+            "traffic_light",
+            "generate_candidate_traffic_light.start",
+            candidate_id=candidate_id,
+            candidate_name=candidate_name,
+            title=title,
+            prj_exp_len=len(candidate_prj_exp or ""),
+        )
         prompt = self.build_prompt(request_text=request_text, candidate_prj_exp=candidate_prj_exp)
 
         llm_raw = self.llm.call(prompt_text=prompt, iteration=0, model="YandexGPT\\pro")
@@ -130,6 +140,13 @@ class TrafficLightService:
             try:
                 data = self._parse_json_from_llm(llm_raw)
                 items = data.get("requirements", {}).get("items", [])
+                trace_step(
+                    logger,
+                    "traffic_light",
+                    "parse_llm.ok",
+                    candidate_id=candidate_id,
+                    items_count=len(items) if isinstance(items, list) else None,
+                )
                 if isinstance(items, list):
                     for it in items:
                         if not isinstance(it, dict):
@@ -145,9 +162,20 @@ class TrafficLightService:
             except Exception:
                 # Если LLM вернул неожиданную форму/битый match_percent — не валим весь светофор,
                 # просто оставим requirements пустыми (color_score_percent станет 0).
+                trace_step(logger, "traffic_light", "parse_llm.failed", candidate_id=candidate_id)
                 logger.exception("Failed to parse traffic light LLM response")
+        else:
+            trace_step(logger, "traffic_light", "no_llm_raw", candidate_id=candidate_id)
 
         color_score_percent = self._calculate_color_score_percent(requirements)
+        trace_step(
+            logger,
+            "traffic_light",
+            "generate_candidate_traffic_light.done",
+            candidate_id=candidate_id,
+            requirements_count=len(requirements),
+            color_score_percent=color_score_percent,
+        )
         return (
             TrafficLightCandidate(
                 id=candidate_id,

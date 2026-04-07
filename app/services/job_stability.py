@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Any
+
+from app.core.tracing import trace_step
+
+_log = logging.getLogger(__name__)
 
 
 def _now_year_month() -> tuple[int, int]:
@@ -79,7 +84,18 @@ def candidate_passes_job_stability(
     - reject if candidate has "too many" short job stays
     - reject if last job end is older than max_not_employed_months
     """
+    trace_step(
+        _log,
+        "job_stability",
+        "candidate_passes_job_stability.enter",
+        experience_count=len(experience_list or []),
+        min_stay_months=min_stay_months,
+        allowed_short_jobs=allowed_short_jobs,
+        jump_mode=jump_mode,
+        max_not_employed_months=max_not_employed_months,
+    )
     if not experience_list:
+        trace_step(_log, "job_stability", "candidate_passes_job_stability.skip_no_experience", result=True)
         return True
 
     now_y, now_m = _now_year_month()
@@ -122,10 +138,28 @@ def candidate_passes_job_stability(
             else:
                 cur = 0
         if max_consecutive > allowed_short_jobs:
+            trace_step(
+                _log,
+                "job_stability",
+                "reject_consecutive_short",
+                max_consecutive=max_consecutive,
+                allowed_short_jobs=allowed_short_jobs,
+                short_flags=short_flags,
+                durations_months=durations_months,
+            )
             return False
     else:
         # "total" / "вообще прыгун"
         if short_total > allowed_short_jobs:
+            trace_step(
+                _log,
+                "job_stability",
+                "reject_total_short",
+                short_total=short_total,
+                allowed_short_jobs=allowed_short_jobs,
+                short_flags=short_flags,
+                durations_months=durations_months,
+            )
             return False
 
     # "Maximum not employed" check uses the most recent job ("последнее место работы")
@@ -149,7 +183,23 @@ def candidate_passes_job_stability(
         if end_parsed is not None:
             months_ago = _months_between(end_parsed, (now_y, now_m))
             if months_ago > max_not_employed_months:
+                trace_step(
+                    _log,
+                    "job_stability",
+                    "reject_unemployed_too_long",
+                    months_since_last_job_end=months_ago,
+                    max_not_employed_months=max_not_employed_months,
+                    last_job_end_raw=end_raw,
+                )
                 return False
 
+    trace_step(
+        _log,
+        "job_stability",
+        "candidate_passes_job_stability.ok",
+        short_total=short_total,
+        jump_mode=jump_mode,
+        durations_months=durations_months,
+    )
     return True
 

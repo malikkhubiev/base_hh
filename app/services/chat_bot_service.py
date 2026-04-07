@@ -11,6 +11,7 @@ from app.clients.hh_chat_client import HHChatClient
 from app.clients.llm_client import LLMClient
 from app.core.chat_bot_store import SqliteChatBotStore, get_chat_bot_store
 from app.core.settings import settings
+from app.core.tracing import get_trace_id, trace_step
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,16 @@ class ChatBotService:
         polling_enabled: bool,
         polling_interval_sec: int,
     ) -> dict[str, Any]:
+        trace_step(
+            logger,
+            "chat_bot_service",
+            "create_or_get_chat.start",
+            resume_hint=(resume_url_or_hash or "")[:160],
+            auto_reply_enabled=auto_reply_enabled,
+            polling_enabled=polling_enabled,
+        )
         resume_hash = self.parse_resume_hash(resume_url_or_hash)
+        trace_step(logger, "chat_bot_service", "create_or_get_chat.resume_hash", resume_hash=resume_hash)
 
         # Always update prompts/state even if chat lookup fails.
         self.store.upsert_state(
@@ -107,7 +117,14 @@ class ChatBotService:
 
         # Try to create (or fetch) the chat. Response schema in openapi is empty,
         # so we'll likely need to resolve chat_id from the chat list.
+        trace_step(logger, "chat_bot_service", "create_or_get_chat.hh_create_call", resume_hash=resume_hash)
         resp = self.hh.get_or_create_chat_without_vacancy_common(resume_hash=resume_hash, first_message=first_message)
+        trace_step(
+            logger,
+            "chat_bot_service",
+            "create_or_get_chat.hh_create_response",
+            response_keys=list(resp.keys()) if isinstance(resp, dict) else type(resp).__name__,
+        )
 
         # If HH actually returns chat_id, use it.
         chat_id = None
@@ -118,6 +135,7 @@ class ChatBotService:
                     chat_id = val.strip()
 
         if not chat_id:
+            trace_step(logger, "chat_bot_service", "create_or_get_chat.resolve_chat_id")
             chat_id = self._resolve_chat_id_by_last_message(resume_hash=resume_hash, first_message=first_message)
 
         if chat_id:
@@ -132,6 +150,7 @@ class ChatBotService:
                 target_text=target_text,
             )
 
+        trace_step(logger, "chat_bot_service", "create_or_get_chat.done", resume_hash=resume_hash, chat_id=chat_id)
         return {"resume_hash": resume_hash, "chat_id": chat_id, "raw_create_response": resp}
 
     def _resolve_chat_id_by_last_message(self, *, resume_hash: str, first_message: str) -> str | None:
@@ -205,6 +224,7 @@ class ChatBotService:
         return None
 
     def send_text(self, *, chat_id: str, text: str) -> dict[str, Any]:
+        trace_step(logger, "chat_bot_service", "send_text", chat_id=chat_id, text_len=len(text or ""))
         if not text.strip():
             raise ValueError("Cannot send empty message")
         idempotency_key = str(uuid4())
@@ -252,16 +272,28 @@ class ChatBotService:
         return raw_role or "Участник"
 
     def handle_new_message_created(self, *, chat_id: str, message_id: str, source: str) -> dict[str, Any]:
+        trace_step(
+            logger,
+            "chat_bot_service",
+            "handle_new_message_created.enter",
+            chat_id=chat_id,
+            message_id=message_id,
+            source=source,
+            parent_trace_for_task=get_trace_id(),
+        )
         state = self.store.get_state_by_chat_id(chat_id=chat_id)
         if not state:
             # Safety: ignore unknown chats.
+            trace_step(logger, "chat_bot_service", "handle_new_message_created.ignored", reason="unknown_chat_id")
             return {"ignored": True, "reason": "unknown_chat_id", "chat_id": chat_id}
 
         if not state.get("auto_reply_enabled"):
+            trace_step(logger, "chat_bot_service", "handle_new_message_created.ignored", reason="auto_reply_disabled")
             return {"ignored": True, "reason": "auto_reply_disabled", "chat_id": chat_id}
 
         last_processed = state.get("last_processed_message_id")
         if last_processed and str(last_processed) == str(message_id):
+            trace_step(logger, "chat_bot_service", "handle_new_message_created.ignored", reason="already_processed")
             return {"ignored": True, "reason": "already_processed", "chat_id": chat_id}
 
         # Fetch the message itself (to get text + sender role).
@@ -269,6 +301,7 @@ class ChatBotService:
         # openapi: ChatsCommonMessagesResponse -> messages is a list
         msg_list = msg_resp.get("messages") if isinstance(msg_resp, dict) else None
         if not isinstance(msg_list, list) or not msg_list:
+            trace_step(logger, "chat_bot_service", "handle_new_message_created.fail", reason="message_not_found")
             return {"ok": False, "error": "message_not_found", "chat_id": chat_id, "message_id": message_id}
 
         m0 = msg_list[0]
@@ -283,6 +316,13 @@ class ChatBotService:
         if sender_role_raw != "APPLICANT":
             # Update last_processed anyway to reduce repeated triggers from our own messages.
             self.store.update_last_processed(resume_hash=state["resume_hash"], message_id=str(message_id))
+            trace_step(
+                logger,
+                "chat_bot_service",
+                "handle_new_message_created.ignored",
+                reason="not_applicant_message",
+                sender_role=sender_role_raw,
+            )
             return {
                 "ignored": True,
                 "reason": "not_applicant_message",
@@ -321,8 +361,16 @@ class ChatBotService:
             conversation=conversation[-8:],
         )
 
+        trace_step(
+            logger,
+            "chat_bot_service",
+            "handle_new_message_created.llm_call",
+            incoming_preview=(incoming_text or "")[:300],
+            history_turns=len(conversation),
+        )
         llm_raw = self.llm.call(prompt_text=prompt, iteration=0)
         reply_text = self._coerce_reply_text(llm_raw)
+        trace_step(logger, "chat_bot_service", "handle_new_message_created.llm_reply", reply_len=len(reply_text or ""))
 
         ok = False
         error = None
@@ -349,6 +397,7 @@ class ChatBotService:
         if ok:
             self.store.update_last_processed(resume_hash=state["resume_hash"], message_id=str(message_id))
 
+        trace_step(logger, "chat_bot_service", "handle_new_message_created.exit", ok=ok, error=error)
         return {"ok": ok, "chat_id": chat_id, "message_id": message_id, "reply_text": reply_text, "error": error}
 
     def poll_once(self) -> dict[str, Any]:
@@ -356,12 +405,14 @@ class ChatBotService:
         Poller: checks unread count and processes only configured chats.
         """
         enabled_states = self.store.get_polling_enabled_states()
+        trace_step(logger, "chat_bot_service", "poll_once", enabled_chats=len(enabled_states or []))
         if not enabled_states:
             return {"ok": True, "processed": 0, "reason": "polling_disabled"}
 
         processed = 0
         latest_scan = self.hh.get_common_chat_list(filter_unread=True, per_page=20, page=0)
         items = latest_scan.get("items") or []
+        trace_step(logger, "chat_bot_service", "poll_once.unread_scan", unread_candidates=len(items))
 
         for st in enabled_states:
             chat_id = st.get("chat_id")
@@ -399,5 +450,6 @@ class ChatBotService:
             res = self.handle_new_message_created(chat_id=str(chat_id), message_id=str(last_message_id), source="poll")
             processed += 1 if res.get("ok") else 0
 
+        trace_step(logger, "chat_bot_service", "poll_once.done", processed=processed)
         return {"ok": True, "processed": processed}
 

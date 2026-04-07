@@ -60,6 +60,8 @@ class Candidate(BaseModel):
     experience: Any | None = None
     skills: list[Any] = Field(default_factory=list)
     tags: list[Any] = Field(default_factory=list)
+    first_name: str | None = None
+    last_name: str | None = None
 
 
 class SearchRequest(BaseModel):
@@ -123,6 +125,10 @@ class SearchResponse(BaseModel):
     llm_raw: Any | None = None
     queries: dict[LevelName, str]
     queries_with_exclusions: dict[LevelName, str]
+    hh_search_urls: dict[LevelName, str] = Field(
+        default_factory=dict,
+        description="Ссылки на веб-поиск HH с теми же параметрами, что использовались в API.",
+    )
     found_counts: dict[LevelName, int]
     selected_level: LevelName
     token_source_used: TokenSource
@@ -158,6 +164,10 @@ class SvetoforResponse(BaseModel):
     llm_raw: Any | None = None
     queries: dict[LevelName, str]
     queries_with_exclusions: dict[LevelName, str]
+    hh_search_urls: dict[LevelName, str] = Field(
+        default_factory=dict,
+        description="Ссылки на веб-поиск HH с теми же параметрами, что использовались в API.",
+    )
     found_counts: dict[LevelName, int]
     selected_level: LevelName
     token_source_used: TokenSource
@@ -167,4 +177,60 @@ class SvetoforResponse(BaseModel):
     traffic_light_candidates: list[TrafficLightCandidate]
     excel_base64: str | None = Field(None, description="Заполняется при include_excel=true")
     excel_filename: str | None = None
+
+
+class TrafficLightFromCandidatesRequest(BaseModel):
+    """
+    Запрос для расчёта "Светофора" без повторного запуска булевых запросов и поиска в HH.
+    UI передаёт уже найденных кандидатов (по уровню), а сервер догружает резюме по id и считает ColorScore.
+    """
+
+    request_text: str = Field(description="Текст вакансии/требований для LLM")
+    selected_level: LevelName = "Уровень 2"
+    candidates: list[Candidate] = Field(default_factory=list, description="Кандидаты, уже найденные в поиске")
+
+    # Filter params for "job stability" stage in traffic light.
+    min_stay_months: int = Field(3, ge=1, le=240)
+    allowed_short_jobs: int = Field(2, ge=0, le=50)
+    jump_mode: Literal["consecutive", "total"] = "consecutive"
+    max_not_employed_months: int = Field(6, ge=0, le=240)
+
+    # How many first candidates to process by traffic light.
+    svetofor_top_x: int = Field(20, ge=1, le=200)
+
+    @model_validator(mode="after")
+    def _require_text(self) -> Self:
+        if not (self.request_text or "").strip():
+            raise ValueError("request_text is required")
+        return self
+
+
+class TrafficLightFromCandidatesResponse(BaseModel):
+    selected_level: LevelName
+    traffic_light_candidates: list[TrafficLightCandidate]
+
+
+class ExportExcelUiRequest(BaseModel):
+    """
+    Запрос для экспорта Excel без повторного поиска в HH:
+    UI передаёт уже полученные данные (queries/urls/counts/candidates) + светофоры (если были).
+    """
+
+    request_text: str = Field(default="", description="Текст вакансии/требований")
+    selected_level: LevelName = "Уровень 2"
+
+    queries: dict[LevelName, str] = Field(default_factory=lambda: normalize_level_queries(None))
+    queries_with_exclusions: dict[LevelName, str] = Field(default_factory=lambda: normalize_level_queries(None))
+    hh_search_urls: dict[LevelName, str] = Field(default_factory=dict)
+    found_counts: dict[LevelName, int] = Field(default_factory=dict)
+    candidates_by_level: dict[LevelName, list[Candidate]] = Field(default_factory=dict)
+
+    # Светофоры, которые уже были рассчитаны в UI (по уровням).
+    traffic_lights_by_level: dict[LevelName, list[TrafficLightCandidate]] | None = None
+
+    @model_validator(mode="after")
+    def _require_text(self) -> Self:
+        if not (self.request_text or "").strip():
+            raise ValueError("request_text is required")
+        return self
 

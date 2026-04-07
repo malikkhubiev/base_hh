@@ -9,6 +9,7 @@ import requests
 
 from app.core.log_store import get_log_store
 from app.core.settings import settings
+from app.core.tracing import trace_step
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,17 @@ class HHChatClient:
         headers = self._headers()
         # Use a slightly larger timeout for chat polling.
         timeout_s = 45 if method.upper() == "GET" else 30
+        trace_step(
+            logger,
+            "hh_chat_client",
+            "http.request",
+            method=method,
+            path=path,
+            params=params,
+            has_json_body=json is not None,
+        )
         resp = requests.request(method, url, headers=headers, params=params, json=json, timeout=timeout_s)
+        trace_step(logger, "hh_chat_client", "http.response", path=path, status_code=resp.status_code)
         return resp
 
     def get_common_chat_list(
