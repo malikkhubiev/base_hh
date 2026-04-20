@@ -87,10 +87,45 @@ def build_search_excel_bytes(
                 out.append(it)
         candidates_by_level[lvl] = out
 
-    duration_sec = (finished_at - started_at).total_seconds()
-    bool_duration_sec = (bool_finished_at - started_at).total_seconds()
-    hh_duration_sec = (hh_finished_at - bool_finished_at).total_seconds()
-    tl_duration_sec = (finished_at - hh_finished_at).total_seconds() if ran_traffic_light else 0.0
+    def _safe_duration_sec(left: datetime, right: datetime) -> float:
+        return max(0.0, (right - left).total_seconds())
+
+    def _format_duration(duration_sec: float) -> str:
+        if duration_sec < 1:
+            return f"{duration_sec:.3f} s"
+        mins = int(duration_sec // 60)
+        secs = duration_sec - mins * 60
+        return f"{mins} min {secs:.3f} s"
+
+    duration_sec = _safe_duration_sec(started_at, finished_at)
+    bool_duration_sec = _safe_duration_sec(started_at, bool_finished_at)
+    hh_duration_sec = _safe_duration_sec(bool_finished_at, hh_finished_at)
+    tl_duration_sec = _safe_duration_sec(hh_finished_at, finished_at) if ran_traffic_light else 0.0
+    timings = {
+        "total_sec": round(duration_sec, 6),
+        "bool_sec": round(bool_duration_sec, 6),
+        "hh_sec": round(hh_duration_sec, 6),
+        "tl_sec": round(tl_duration_sec, 6),
+    }
+    has_timing_anomaly = bool_finished_at < started_at or hh_finished_at < bool_finished_at or finished_at < hh_finished_at
+    trace_step(
+        _log,
+        "excel_export",
+        "build_search_excel_bytes.timing_breakdown",
+        ran_traffic_light=ran_traffic_light,
+        anomaly=has_timing_anomaly,
+        **timings,
+    )
+    if has_timing_anomaly:
+        trace_step(
+            _log,
+            "excel_export",
+            "build_search_excel_bytes.timing_anomaly",
+            started_at=started_at.isoformat(),
+            bool_finished_at=bool_finished_at.isoformat(),
+            hh_finished_at=hh_finished_at.isoformat(),
+            finished_at=finished_at.isoformat(),
+        )
 
     output = io.BytesIO()
     workbook = xlsxwriter.Workbook(output, {"in_memory": True})
@@ -139,7 +174,7 @@ def build_search_excel_bytes(
     sheet_req.write(
         row,
         1,
-        f"{int(duration_sec // 60)} min {int(duration_sec % 60)} s | "
+        f"{_format_duration(duration_sec)} | "
         f"{started_at.strftime('%d.%m.%Y %H:%M:%S')} ... {finished_at.strftime('%d.%m.%Y %H:%M:%S')}",
     )
     row += 2
@@ -148,7 +183,7 @@ def build_search_excel_bytes(
     sheet_req.write(
         row,
         1,
-        f"{int(bool_duration_sec // 60)} min {int(bool_duration_sec % 60)} s | "
+        f"{_format_duration(bool_duration_sec)} | "
         f"{started_at.strftime('%d.%m.%Y %H:%M:%S')} ... {bool_finished_at.strftime('%d.%m.%Y %H:%M:%S')}",
     )
     row += 1
@@ -156,26 +191,21 @@ def build_search_excel_bytes(
     sheet_req.write(
         row,
         1,
-        f"{int(hh_duration_sec // 60)} min {int(hh_duration_sec % 60)} s | "
+        f"{_format_duration(hh_duration_sec)} | "
         f"{bool_finished_at.strftime('%d.%m.%Y %H:%M:%S')} ... {hh_finished_at.strftime('%d.%m.%Y %H:%M:%S')}",
     )
     row += 1
-    sheet_req.write(row, 0, "Время построения Светофора:", bold)
     if ran_traffic_light:
+        sheet_req.write(row, 0, "Время построения Светофора:", bold)
         sheet_req.write(
             row,
             1,
-            f"{int(tl_duration_sec // 60)} min {int(tl_duration_sec % 60)} s | "
+            f"{_format_duration(tl_duration_sec)} | "
             f"{hh_finished_at.strftime('%d.%m.%Y %H:%M:%S')} ... {finished_at.strftime('%d.%m.%Y %H:%M:%S')}",
         )
+        row += 2
     else:
-        sheet_req.write(
-            row,
-            1,
-            f"0 min 0 s | {hh_finished_at.strftime('%d.%m.%Y %H:%M:%S')} ... {hh_finished_at.strftime('%d.%m.%Y %H:%M:%S')} "
-            f"(не выполнялось)",
-        )
-    row += 2
+        row += 1
 
     # Листы кандидатов по уровням (вместо одного общего листа)
     first_keys = [

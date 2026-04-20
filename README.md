@@ -479,6 +479,13 @@ uvicorn app.main:app --reload
 - Проверьте значения `min_stay_months`, `allowed_short_jobs`, `jump_mode`, `max_not_employed_months`.
 - Увеличьте `svetofor_top_x` в разумных пределах.
 
+### В Excel в таймингах отображаются нули
+
+- В листе `Запрос` длительности этапов теперь пишутся с точностью до миллисекунд (например, `0.437 s`), поэтому быстрые этапы больше не округляются до `0 min 0 s`.
+- Для `POST /api/export_excel_ui` UI передаёт серверные метки времени предыдущих этапов (`started_at`, `bool_finished_at`, `hh_finished_at`, `finished_at`, `ran_traffic_light`), поэтому в книге тоже заполняются реальные длительности.
+- Строка `Время построения Светофора` выводится только если светофор реально запускался (`ran_traffic_light=true`); иначе строка не добавляется.
+- Сервис пишет дополнительный timing breakdown в логи (`excel_export.build_search_excel_bytes.timing_breakdown`) и отдельный сигнал при аномальном порядке меток времени (`...timing_anomaly`).
+
 ### Чат-бот не отвечает
 
 - Проверьте наличие `chat_id` в state.

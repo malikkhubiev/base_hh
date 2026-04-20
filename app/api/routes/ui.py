@@ -398,6 +398,10 @@ def index() -> str:
     tlExcelByLevel: {},
     fullExcelBlobUrl: null,
     fullExcelFileName: "",
+    startedAt: null,
+    boolFinishedAt: null,
+    hhFinishedAt: null,
+    finishedAt: null,
   };
 
   function setStatus(text) { el("status").textContent = text || ""; }
@@ -1164,6 +1168,11 @@ def index() -> str:
       hh_search_urls: state.hhSearchUrls || {},
       found_counts: state.foundCounts || {},
       candidates_by_level: state.candidatesByLevel || {},
+      started_at: state.startedAt || null,
+      bool_finished_at: state.boolFinishedAt || null,
+      hh_finished_at: state.hhFinishedAt || null,
+      finished_at: state.finishedAt || null,
+      ran_traffic_light: Boolean(state.hasTrafficLightRun),
       traffic_lights_by_level: trafficLightsByLevel || null,
     };
   }
@@ -1367,6 +1376,10 @@ def index() -> str:
       state.hhSearchUrls = data.hh_search_urls;
       state.selectedLevel = pickDefaultLevelByCounts(state.foundCounts, 20);
       state.hasTrafficLightRun = false;
+      state.startedAt = data.started_at || null;
+      state.boolFinishedAt = data.bool_finished_at || null;
+      state.hhFinishedAt = data.hh_finished_at || null;
+      state.finishedAt = data.finished_at || null;
       // reset traffic lights + excel caches
       state.trafficLightByLevel = {};
       state.activeTrafficLevel = null;
@@ -1459,6 +1472,8 @@ def index() -> str:
       state.trafficLightByLevel[levelName] = tlItems;
       state.selectedLevel = levelName;
       state.hasTrafficLightRun = true;
+      // Сохраняем отметку завершения светофора для корректных таймингов в Excel UI-экспорте.
+      state.finishedAt = (new Date()).toISOString();
       state.trafficLightCandidates = [...tlItems];
       // invalidate excel caches
       const prevTl = state.tlExcelByLevel?.[levelName];

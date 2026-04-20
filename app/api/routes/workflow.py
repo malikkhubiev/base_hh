@@ -257,6 +257,11 @@ def search(payload: SearchRequest):
         selected_level=selected_level,  # type: ignore[arg-type]
         token_source_used=token_source,  # type: ignore[arg-type]
         candidates_by_level=candidates_by_level,  # type: ignore[arg-type]
+        started_at=started_at,
+        bool_finished_at=bool_finished_at,
+        hh_finished_at=hh_finished_at,
+        finished_at=finished_at,
+        ran_traffic_light=False,
         excel_base64=excel_b64,
         excel_filename=excel_fn,
     )
@@ -523,6 +528,11 @@ async def svetofor(payload: SearchRequest):
         selected_level=selected_level,  # type: ignore[arg-type]
         token_source_used=token_source,  # type: ignore[arg-type]
         candidates_by_level=candidates_by_level,  # type: ignore[arg-type]
+        started_at=started_at,
+        bool_finished_at=bool_finished_at,
+        hh_finished_at=hh_finished_at,
+        finished_at=finished_at,
+        ran_traffic_light=True,
         traffic_light_candidates=traffic_light_candidates,  # type: ignore[arg-type]
         excel_base64=excel_b64,
         excel_filename=excel_fn,
@@ -707,7 +717,11 @@ async def export_excel_ui(payload: ExportExcelUiRequest):
         trace_step(_log, "workflow", "export_excel_ui.fail", reason="no_xlsxwriter")
         raise HTTPException(status_code=500, detail="xlsxwriter is not installed on server")
 
-    started_at = datetime.utcnow()
+    now = datetime.utcnow()
+    started_at = payload.started_at or now
+    bool_finished_at = payload.bool_finished_at or started_at
+    hh_finished_at = payload.hh_finished_at or bool_finished_at
+    fallback_finished = payload.finished_at or hh_finished_at
 
     # UI уже прислал нормализованные данные.
     candidates_by_level_raw: dict[str, list[Any]] = {}
@@ -722,7 +736,7 @@ async def export_excel_ui(payload: ExportExcelUiRequest):
         candidates_by_level_raw[lvl] = out
 
     traffic_light_candidates_by_level: dict[str, list[Any]] | None = None
-    ran_traffic_light = False
+    ran_traffic_light = bool(payload.ran_traffic_light)
     if payload.traffic_lights_by_level:
         traffic_light_candidates_by_level = {}
         for lvl, items in payload.traffic_lights_by_level.items():
@@ -734,10 +748,19 @@ async def export_excel_ui(payload: ExportExcelUiRequest):
                     out_tl.append(c)
             if out_tl:
                 traffic_light_candidates_by_level[lvl] = out_tl
-        ran_traffic_light = bool(traffic_light_candidates_by_level)
+        ran_traffic_light = ran_traffic_light or bool(traffic_light_candidates_by_level)
 
-    # Тайминги: для UI-экспорта ставим одинаковые отметки (мы не можем восстановить реальные).
-    finished_at = datetime.utcnow()
+    finished_at = fallback_finished if not ran_traffic_light else (payload.finished_at or datetime.utcnow())
+    trace_step(
+        _log,
+        "workflow",
+        "export_excel_ui.timing_input",
+        started_at=started_at.isoformat(),
+        bool_finished_at=bool_finished_at.isoformat(),
+        hh_finished_at=hh_finished_at.isoformat(),
+        finished_at=finished_at.isoformat(),
+        ran_traffic_light=ran_traffic_light,
+    )
     raw_bytes, filename = build_search_excel_bytes(
         request_text=payload.request_text,
         level_queries=payload.queries,
@@ -749,8 +772,8 @@ async def export_excel_ui(payload: ExportExcelUiRequest):
         traffic_light_candidates=[],
         traffic_light_candidates_by_level=traffic_light_candidates_by_level,
         started_at=started_at,
-        bool_finished_at=started_at,
-        hh_finished_at=started_at,
+        bool_finished_at=bool_finished_at,
+        hh_finished_at=hh_finished_at,
         finished_at=finished_at,
         ran_traffic_light=ran_traffic_light,
     )

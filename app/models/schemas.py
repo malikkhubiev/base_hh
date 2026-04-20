@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal, Mapping, Self
 
 from pydantic import BaseModel, Field, model_validator
@@ -133,6 +134,11 @@ class SearchResponse(BaseModel):
     selected_level: LevelName
     token_source_used: TokenSource
     candidates_by_level: dict[LevelName, list[Candidate]]
+    started_at: datetime | None = None
+    bool_finished_at: datetime | None = None
+    hh_finished_at: datetime | None = None
+    finished_at: datetime | None = None
+    ran_traffic_light: bool = False
     excel_base64: str | None = Field(None, description="Заполняется при include_excel=true")
     excel_filename: str | None = None
 
@@ -172,6 +178,11 @@ class SvetoforResponse(BaseModel):
     selected_level: LevelName
     token_source_used: TokenSource
     candidates_by_level: dict[LevelName, list[Candidate]]
+    started_at: datetime | None = None
+    bool_finished_at: datetime | None = None
+    hh_finished_at: datetime | None = None
+    finished_at: datetime | None = None
+    ran_traffic_light: bool = True
 
     # Кандидаты, отсортированные по ColorScore (пока для теста может быть <= 1).
     traffic_light_candidates: list[TrafficLightCandidate]
@@ -224,6 +235,11 @@ class ExportExcelUiRequest(BaseModel):
     hh_search_urls: dict[LevelName, str] = Field(default_factory=dict)
     found_counts: dict[LevelName, int] = Field(default_factory=dict)
     candidates_by_level: dict[LevelName, list[Candidate]] = Field(default_factory=dict)
+    started_at: datetime | None = None
+    bool_finished_at: datetime | None = None
+    hh_finished_at: datetime | None = None
+    finished_at: datetime | None = None
+    ran_traffic_light: bool = False
 
     # Светофоры, которые уже были рассчитаны в UI (по уровням).
     traffic_lights_by_level: dict[LevelName, list[TrafficLightCandidate]] | None = None
