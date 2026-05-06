@@ -1,9 +1,19 @@
+#Обязательно:
 Опыт разработки на Python от 4 лет в production-системах (PET и MVP без продакшена не рассматриваются);
 Опыт работы с MPP аналитическими хранилищами данных: Arenadata HyperWave ИЛИ Greenplum / Vertica / Teradata / ClickHouse (DWH);
+Опыт разработки на React;
+Опыт разработки на Vue;
 Опыт работы с Hadoop / Data Lake стеком: Arenadata Hadoop ИЛИ Apache Hadoop (HDFS или Ozone);
 Опыт работы с SQL-движками: Impala ИЛИ Hive;
 Опыт работы с Parquet.
+
+#Желательно:
 Опыт работы с Spark (PySpark);
 Опыт работы с Airflow;
 Опыт работы с Enterprise Security в Hadoop: Kerberos / Ranger / Knox;
 Опыт работы с Visiology.
+
+#Задачи:
+Загрузка структурированных и неструктурированных данных;
+Работа с паркетами;
+Написание скриптов и интеграций.

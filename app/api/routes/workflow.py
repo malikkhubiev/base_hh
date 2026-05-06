@@ -1,44 +1,37 @@
 from __future__ import annotations
 
-import base64
 import logging
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import PlainTextResponse, StreamingResponse
+from fastapi import APIRouter
+from fastapi.responses import PlainTextResponse
 
 from app.core.settings import settings
 from app.core.tracing import trace_step
 from app.models.schemas import (
-    ExportExcelUiRequest,
     GenerateQueriesRequest,
     GenerateQueriesResponse,
-    LevelName,
     SearchRequest,
     SearchResponse,
+    ScreeningRequest,
+    ScreeningResponse,
     SvetoforResponse,
+    TrafficLightCandidate,
+    TrafficLightRequirement,
     TrafficLightFromCandidatesRequest,
     TrafficLightFromCandidatesResponse,
-    normalize_level_queries,
 )
-from app.services.excel_export import build_search_excel_bytes, xlsxwriter_available
 from app.services.hh_search import HHSearchService
 from app.services.prompts import PromptService
-from app.services.query_generator import QueryGenerator
+from app.services.request_query_planner import RequestQueryPlanner
+from app.services.general_requirements_service import GeneralRequirementsService
 from app.services.traffic_light_service import TrafficLightService
-from app.services.job_stability import candidate_passes_job_stability
-
-try:
-    import io
-
-    import xlsxwriter  # type: ignore[import-untyped]
-except Exception:  # pragma: no cover - optional dependency
-    xlsxwriter = None  # type: ignore[assignment]
-
 
 router = APIRouter()
 _log = logging.getLogger(__name__)
+MAX_SEARCH_ITERATIONS_BY_RESTART = (30, 40, 50, 60)
+MAX_TOTAL_SEARCH_ITERATIONS = 100
 
 
 def _run_query_generation(
@@ -46,9 +39,11 @@ def _run_query_generation(
     request_text: str,
     system_prompt_override: str | None,
     user_prompt_override: str | None,
-    queries_override: dict[LevelName, str] | None,
-) -> tuple[dict[str, str], Any | None, datetime, datetime]:
+    queries_override: dict[str, str] | None,
+) -> tuple[dict[str, str], Any | None, list[tuple[str, str]], list[dict[str, Any]], datetime, datetime]:
     """Генерация или подстановка булевых запросов; возвращает (queries, llm_raw, started_at, bool_finished_at)."""
+    if not (request_text or "").strip():
+        request_text = PromptService().get_default_request_text()
     started_at = datetime.utcnow()
     trace_step(
         _log,
@@ -58,18 +53,23 @@ def _run_query_generation(
         request_text_preview=(request_text or "")[:500],
     )
     if queries_override is not None:
-        qn = normalize_level_queries(queries_override)
-        trace_step(_log, "workflow", "_run_query_generation.override_queries", level_keys=list(qn.keys()))
-        return qn, None, started_at, started_at
-    gen = QueryGenerator(
+        qn = {"Основной": str((queries_override or {}).get("Основной") or "")}
+        trace_step(_log, "workflow", "_run_query_generation.override_queries", keys=list(qn.keys()))
+        plan = [
+            ("Этап override 1", qn.get("Основной", "")),
+        ]
+        plan = [(k, v) for k, v in plan if v]
+        meta = [{"stage": k, "query": v} for k, v in plan]
+        return qn, None, plan, meta, started_at, started_at
+
+    # Новая логика из task.txt: разбивка запроса на блоки и комбинаторика.
+    planner = RequestQueryPlanner(
         llm_url=settings.llm_url,
         llm_token_param=settings.llm_token_param,
     )
-    queries, llm_raw = gen.generate(
-        request_text,
-        system_prompt_override=system_prompt_override,
-        user_prompt_override=user_prompt_override,
-    )
+    planned = planner.build(request_text)
+    queries = planned.queries
+    llm_raw = planned.llm_debug
     bool_finished_at = datetime.utcnow()
     trace_step(
         _log,
@@ -78,48 +78,38 @@ def _run_query_generation(
         level_keys=list(queries.keys()),
         llm_raw_is_none=llm_raw is None,
     )
-    return queries, llm_raw, started_at, bool_finished_at
+    return queries, llm_raw, planned.search_plan, planned.search_plan_meta, started_at, bool_finished_at
 
 
-def _excel_optional_b64(
-    payload: SearchRequest,
-    *,
-    level_queries: dict[str, str] | None,
-    queries_with_exclusions: dict[str, str] | None,
-    hh_search_urls: dict[str, str] | None,
-    selected_level: str | None,
-    found_counts: dict,
-    candidates_by_level_raw: dict[str, list],
-    traffic_light_candidates: list,
-    started_at: datetime,
-    bool_finished_at: datetime,
-    hh_finished_at: datetime,
-    finished_at: datetime,
-    ran_traffic_light: bool,
-) -> tuple[str | None, str | None]:
-    trace_step(_log, "workflow", "_excel_optional_b64.check", include_excel=payload.include_excel)
-    if not payload.include_excel:
-        return None, None
-    if not xlsxwriter_available():
-        trace_step(_log, "workflow", "_excel_optional_b64.fail", reason="xlsxwriter_missing")
-        raise HTTPException(status_code=500, detail="xlsxwriter is not installed on server")
-    raw, fname = build_search_excel_bytes(
-        request_text=payload.request_text,
-        level_queries=level_queries,
-        queries_with_exclusions=queries_with_exclusions,
-        hh_search_urls=hh_search_urls,
-        selected_level=selected_level,
-        found_counts=found_counts,
-        candidates_by_level_raw=candidates_by_level_raw,
-        traffic_light_candidates=traffic_light_candidates,
-        started_at=started_at,
-        bool_finished_at=bool_finished_at,
-        hh_finished_at=hh_finished_at,
-        finished_at=finished_at,
-        ran_traffic_light=ran_traffic_light,
-    )
-    trace_step(_log, "workflow", "_excel_optional_b64.built", filename=fname, raw_bytes=len(raw))
-    return base64.b64encode(raw).decode("ascii"), fname
+def _normalize_candidates_by_level(candidates_by_level_raw: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+    candidates_by_level: dict[str, list[dict[str, Any]]] = {}
+    for level, items in candidates_by_level_raw.items():
+        norm: list[dict[str, Any]] = []
+        for it in items or []:
+            if not isinstance(it, dict):
+                continue
+            norm.append(
+                {
+                    "id": it.get("id"),
+                    "title": it.get("title"),
+                    "url": it.get("url"),
+                    "alternate_url": it.get("alternate_url"),
+                    "created_at": it.get("created_at"),
+                    "updated_at": it.get("updated_at"),
+                    "age": it.get("age"),
+                    "area": it.get("area"),
+                    "employer": it.get("employer"),
+                    "salary": it.get("salary"),
+                    "experience": it.get("experience"),
+                    "experience_full": it.get("experience_full"),
+                    "skills": it.get("skills") if isinstance(it.get("skills"), list) else [],
+                    "tags": it.get("tags") if isinstance(it.get("tags"), list) else [],
+                    "first_name": it.get("first_name"),
+                    "last_name": it.get("last_name"),
+                }
+            )
+        candidates_by_level[level] = norm
+    return candidates_by_level
 
 
 @router.get("/default_request", response_class=PlainTextResponse)
@@ -142,15 +132,16 @@ def user_prompt() -> str:
 
 @router.post("/generate_queries", response_model=GenerateQueriesResponse)
 def generate_queries(payload: GenerateQueriesRequest):
+    request_text = payload.request_text or PromptService().get_default_request_text()
     trace_step(
         _log,
         "workflow",
         "generate_queries",
-        request_text_preview=(payload.request_text or "")[:300],
+        request_text_preview=(request_text or "")[:300],
         has_queries_override=payload.queries_override is not None,
     )
-    queries, llm_raw, _, _ = _run_query_generation(
-        request_text=payload.request_text,
+    queries, llm_raw, _, _, _, _ = _run_query_generation(
+        request_text=request_text,
         system_prompt_override=payload.system_prompt_override,
         user_prompt_override=payload.user_prompt_override,
         queries_override=payload.queries_override,
@@ -158,129 +149,178 @@ def generate_queries(payload: GenerateQueriesRequest):
     return GenerateQueriesResponse(llm_raw=llm_raw, queries=queries)  # type: ignore[arg-type]
 
 
-@router.post("/search", response_model=SearchResponse, response_model_exclude_none=True)
-def search(payload: SearchRequest):
-    trace_step(
-        _log,
-        "workflow",
-        "search.start",
-        area_id=payload.area_id,
-        candidates_limit=payload.candidates_limit,
-        include_excel=payload.include_excel,
-        request_preview=(payload.request_text or "")[:300],
-    )
-    area_id = payload.area_id or settings.area_id
-    professional_roles = payload.professional_roles or settings.professional_roles
-    trace_step(_log, "workflow", "search.params_resolved", area_id=area_id, professional_roles=professional_roles)
-
-    queries, llm_raw, started_at, bool_finished_at = _run_query_generation(
-        request_text=payload.request_text,
-        system_prompt_override=payload.system_prompt_override,
-        user_prompt_override=payload.user_prompt_override,
-        queries_override=payload.queries_override,
-    )
-
+def _run_search_with_restarts(
+    *,
+    payload: SearchRequest,
+    request_text: str,
+    area_id: int,
+) -> tuple[
+    dict[str, str],
+    Any | None,
+    dict[str, int],
+    dict[str, list[dict[str, Any]]],
+    dict[str, str],
+    dict[str, str],
+    str,
+    list[dict[str, Any]],
+    datetime,
+    datetime,
+    datetime,
+    int,
+    int,
+]:
     token_source = settings.token_source
     hh = HHSearchService(
         token_url=settings.hh_token_url,
         token_source=token_source,
     )
-    found_counts, candidates_by_level_raw, full_queries, web_urls = hh.search_counts_and_candidates(
+    accumulated_attempts: list[dict[str, Any]] = []
+    prompt_restarts = 0
+    total_iterations = 0
+    started_at_overall: datetime | None = None
+    bool_finished_at_last: datetime | None = None
+    hh_finished_at_last: datetime | None = None
+    last_output: tuple[Any, ...] | None = None
+    best_output: tuple[Any, ...] | None = None
+    best_count = -1
+
+    for max_attempts in MAX_SEARCH_ITERATIONS_BY_RESTART:
+        if total_iterations >= MAX_TOTAL_SEARCH_ITERATIONS:
+            trace_step(
+                _log,
+                "workflow",
+                "_run_search_with_restarts.iteration_limit_reached",
+                total_iterations=total_iterations,
+                max_total_iterations=MAX_TOTAL_SEARCH_ITERATIONS,
+            )
+            break
+        queries, llm_raw, search_plan, search_plan_meta, started_at, bool_finished_at = _run_query_generation(
+            request_text=request_text,
+            system_prompt_override=payload.system_prompt_override,
+            user_prompt_override=payload.user_prompt_override,
+            queries_override=payload.queries_override,
+        )
+        if started_at_overall is None:
+            started_at_overall = started_at
+        bool_finished_at_last = bool_finished_at
+
+        found_counts, candidates_by_level_raw, full_queries, web_urls, final_boolean_query, stage_attempts = hh.search_counts_and_candidates(
+            queries,
+            search_plan=search_plan,
+            search_plan_meta=search_plan_meta,
+            source_text=request_text,
+            area_id=area_id,
+            per_page=min(200, int(payload.candidates_limit) * 3),
+            min_needed=int(payload.candidates_limit),
+            max_stage_attempts=max_attempts,
+        )
+        hh_finished_at_last = datetime.utcnow()
+        accumulated_attempts.extend(stage_attempts)
+        total_iterations += len(stage_attempts)
+        if total_iterations > MAX_TOTAL_SEARCH_ITERATIONS:
+            overflow = total_iterations - MAX_TOTAL_SEARCH_ITERATIONS
+            if overflow > 0:
+                if overflow <= len(stage_attempts):
+                    stage_attempts = stage_attempts[:-overflow] if overflow < len(stage_attempts) else []
+                    accumulated_attempts = accumulated_attempts[:-overflow] if overflow <= len(accumulated_attempts) else []
+                total_iterations = MAX_TOTAL_SEARCH_ITERATIONS
+        last_output = (
+            queries,
+            llm_raw,
+            found_counts,
+            candidates_by_level_raw,
+            full_queries,
+            web_urls,
+            final_boolean_query,
+        )
+        current_count = len(candidates_by_level_raw.get("Основной", []))
+        if current_count > best_count:
+            best_count = current_count
+            best_output = last_output
+        if len(candidates_by_level_raw.get("Основной", [])) >= payload.candidates_limit:
+            break
+        prompt_restarts += 1
+
+    chosen_output = best_output or last_output
+    if not chosen_output or started_at_overall is None or bool_finished_at_last is None or hh_finished_at_last is None:
+        raise RuntimeError("Search pipeline failed unexpectedly")
+
+    queries, llm_raw, found_counts, candidates_by_level_raw, full_queries, web_urls, final_boolean_query = chosen_output
+    return (
         queries,
-        source_text=payload.request_text,
-        area_id=area_id,
-        professional_roles=professional_roles,
-        per_page=payload.candidates_limit,
+        llm_raw,
+        found_counts,
+        candidates_by_level_raw,
+        full_queries,
+        web_urls,
+        final_boolean_query,
+        accumulated_attempts,
+        started_at_overall,
+        bool_finished_at_last,
+        hh_finished_at_last,
+        total_iterations,
+        prompt_restarts,
     )
-    hh_finished_at = datetime.utcnow()
+
+
+@router.post("/search", response_model=SearchResponse, response_model_exclude_none=True)
+def search(payload: SearchRequest):
+    request_text = payload.request_text or PromptService().get_default_request_text()
+    trace_step(_log, "workflow", "search.start", area_id=payload.area_id, candidates_limit=payload.candidates_limit, request_preview=(request_text or "")[:300])
+    area_id = payload.area_id or settings.area_id
+    trace_step(_log, "workflow", "search.params_resolved", area_id=area_id)
+
+    (
+        queries,
+        llm_raw,
+        found_counts,
+        candidates_by_level_raw,
+        full_queries,
+        web_urls,
+        final_boolean_query,
+        stage_attempts,
+        started_at,
+        bool_finished_at,
+        hh_finished_at,
+        total_iterations,
+        prompt_restarts,
+    ) = _run_search_with_restarts(payload=payload, request_text=request_text, area_id=area_id)
     finished_at = hh_finished_at
     trace_step(_log, "workflow", "search.hh_done", found_counts=found_counts)
 
-    candidates_by_level = {}
-    for level, items in candidates_by_level_raw.items():
-        norm = []
-        for it in items or []:
-            if not isinstance(it, dict):
-                continue
-            norm.append(
-                {
-                    "id": it.get("id"),
-                    "title": it.get("title"),
-                    "url": it.get("url"),
-                    "alternate_url": it.get("alternate_url"),
-                    "created_at": it.get("created_at"),
-                    "updated_at": it.get("updated_at"),
-                    "age": it.get("age"),
-                    "area": it.get("area"),
-                    "employer": it.get("employer"),
-                    "salary": it.get("salary"),
-                    "experience": it.get("experience"),
-                    "skills": it.get("skills") if isinstance(it.get("skills"), list) else [],
-                    "tags": it.get("tags") if isinstance(it.get("tags"), list) else [],
-                    "first_name": it.get("first_name"),
-                    "last_name": it.get("last_name"),
-                }
-            )
-        candidates_by_level[level] = norm
+    candidates_by_level = _normalize_candidates_by_level(candidates_by_level_raw)
 
-    selected_level = payload.selected_level if payload.selected_level in queries else "Уровень 2"
-    trace_step(
-        _log,
-        "workflow",
-        "search.normalized_candidates",
-        selected_level=selected_level,
-        counts_by_level={k: len(v) for k, v in candidates_by_level.items()},
-    )
+    trace_step(_log, "workflow", "search.normalized_candidates", counts_by_level={k: len(v) for k, v in candidates_by_level.items()})
 
-    excel_b64, excel_fn = _excel_optional_b64(
-        payload,
-        level_queries=queries,
-        queries_with_exclusions=full_queries,
-        hh_search_urls=web_urls,
-        selected_level=selected_level,
-        found_counts=found_counts,
-        candidates_by_level_raw=candidates_by_level_raw,
-        traffic_light_candidates=[],
-        started_at=started_at,
-        bool_finished_at=bool_finished_at,
-        hh_finished_at=hh_finished_at,
-        finished_at=finished_at,
-        ran_traffic_light=False,
-    )
-
+    final_search_url = web_urls.get("Основной")
+    found_count = int((found_counts or {}).get("Основной") or 0)
+    candidates = candidates_by_level.get("Основной", []) or []
     return SearchResponse(
         llm_raw=llm_raw,
         queries=queries,  # type: ignore[arg-type]
         queries_with_exclusions=full_queries,  # type: ignore[arg-type]
         hh_search_urls=web_urls,  # type: ignore[arg-type]
-        found_counts=found_counts,  # type: ignore[arg-type]
-        selected_level=selected_level,  # type: ignore[arg-type]
-        token_source_used=token_source,  # type: ignore[arg-type]
-        candidates_by_level=candidates_by_level,  # type: ignore[arg-type]
+        found_count=found_count,
+        candidates=candidates,  # type: ignore[arg-type]
         started_at=started_at,
         bool_finished_at=bool_finished_at,
         hh_finished_at=hh_finished_at,
         finished_at=finished_at,
-        ran_traffic_light=False,
-        excel_base64=excel_b64,
-        excel_filename=excel_fn,
+        final_boolean_query=final_boolean_query,
+        final_search_url=final_search_url,
+        stage_attempts=stage_attempts,  # type: ignore[arg-type]
+        total_iterations=total_iterations,
+        prompt_restarts=prompt_restarts,
     )
-    trace_step(_log, "workflow", "search.response_ready", selected_level=selected_level, has_excel=excel_b64 is not None)
 
 
 def _pick_best_level_by_candidates(candidates_by_level_raw: dict[str, list[dict]]):
     counts = {k: len(v or []) for k, v in candidates_by_level_raw.items()}
-    if (candidates_by_level_raw.get("Уровень 3") or []):
-        trace_step(_log, "workflow", "_pick_best_level_by_candidates", choice="Уровень 3", counts=counts)
-        return "Уровень 3"
-    if (candidates_by_level_raw.get("Уровень 2") or []):
-        trace_step(_log, "workflow", "_pick_best_level_by_candidates", choice="Уровень 2", counts=counts)
-        return "Уровень 2"
-    if (candidates_by_level_raw.get("Уровень 1") or []):
-        trace_step(_log, "workflow", "_pick_best_level_by_candidates", choice="Уровень 1", counts=counts)
-        return "Уровень 1"
-    trace_step(_log, "workflow", "_pick_best_level_by_candidates", choice="Уровень 2_fallback", counts=counts)
-    return "Уровень 2"
+    if (candidates_by_level_raw.get("Основной") or []):
+        trace_step(_log, "workflow", "_pick_best_level_by_candidates", choice="Основной", counts=counts)
+        return "Основной"
+    trace_step(_log, "workflow", "_pick_best_level_by_candidates", choice="Основной_fallback", counts=counts)
+    return "Основной"
 
 
 def _candidate_name(candidate: dict) -> str:
@@ -312,6 +352,136 @@ def _extract_candidate_prj_exp(resume_data: dict) -> str:
     return "\n".join(parts).strip()
 
 
+def _normalize_full_experience(resume_data: dict[str, Any]) -> list[dict[str, Any]]:
+    exp = resume_data.get("experience")
+    if not isinstance(exp, list):
+        return []
+    out: list[dict[str, Any]] = []
+    for it in exp:
+        if not isinstance(it, dict):
+            continue
+        industries = it.get("industries")
+        if not isinstance(industries, list):
+            industries = []
+        area = it.get("area")
+        if not isinstance(area, dict):
+            area = None
+        out.append(
+            {
+                "id": it.get("id"),
+                "start": it.get("start"),
+                "end": it.get("end"),
+                "company": it.get("company"),
+                "company_id": it.get("company_id"),
+                "company_url": it.get("company_url"),
+                "position": it.get("position"),
+                "description": it.get("description"),
+                "industry": it.get("industry"),
+                "industries": industries,
+                "area": area,
+                "employer": it.get("employer"),
+            }
+        )
+    return out
+
+
+def _parse_llm_markdown_json_any(llm_raw: Any) -> Any | None:
+    """
+    LLM sometimes returns {'markdown': '```json ...```'} (or nested under {'response': ...}).
+    This helper removes code fences and parses JSON to a Python object.
+    """
+    import json
+    import re
+
+    response_obj = llm_raw.get("response", llm_raw) if isinstance(llm_raw, dict) else llm_raw
+    if isinstance(response_obj, dict):
+        markdown = response_obj.get("markdown")
+        if isinstance(markdown, (dict, list)):
+            return markdown
+        if isinstance(markdown, str):
+            response_obj = markdown
+        else:
+            return response_obj
+    if not isinstance(response_obj, str):
+        return None
+    txt = response_obj.strip()
+    txt = re.sub(r"^```[a-zA-Z]*\s*", "", txt)
+    txt = re.sub(r"```\s*$", "", txt)
+    # Extract JSON substring if surrounded by prose.
+    if not ((txt.startswith("{") and txt.endswith("}")) or (txt.startswith("[") and txt.endswith("]"))):
+        a = txt.find("[")
+        b = txt.rfind("]")
+        if a != -1 and b != -1 and b > a:
+            txt = txt[a : b + 1]
+        else:
+            a = txt.find("{")
+            b = txt.rfind("}")
+            if a != -1 and b != -1 and b > a:
+                txt = txt[a : b + 1]
+    try:
+        return json.loads(txt)
+    except Exception:
+        return None
+
+
+def _extract_general_requirements_checks(llm_json: Any) -> list[dict[str, Any]]:
+    """
+    Expected shape (from task.txt example): [[[ok, requirement, evidence], ...]].
+    We normalize to: [{'ok': bool, 'requirement': str, 'evidence': str}, ...]
+    """
+    out: list[dict[str, Any]] = []
+    root = llm_json
+    if isinstance(root, list) and len(root) == 1 and isinstance(root[0], list):
+        root = root[0]
+    if not isinstance(root, list):
+        return out
+    for it in root:
+        if isinstance(it, list) and len(it) >= 3:
+            ok = bool(it[0])
+            req = str(it[1] or "")
+            ev = str(it[2] or "")
+            out.append({"ok": ok, "requirement": req, "evidence": ev})
+        elif isinstance(it, dict):
+            ok = bool(it.get("ok") or it.get("true") or it.get("is_true"))
+            req = str(it.get("requirement") or it.get("check") or "")
+            ev = str(it.get("evidence") or it.get("resume_evidence") or it.get("comment") or "")
+            out.append({"ok": ok, "requirement": req, "evidence": ev})
+    return out
+
+
+def _build_unscored_traffic_light_candidate(candidate: dict[str, Any]) -> TrafficLightCandidate:
+    candidate_id = str(candidate.get("id") or "")
+    return TrafficLightCandidate(
+        id=candidate_id,
+        candidate_name=_candidate_name(candidate),
+        title=candidate.get("title"),
+        location=(candidate.get("area") or {}).get("name") if isinstance(candidate.get("area"), dict) else candidate.get("area"),
+        resume_url=candidate.get("alternate_url") or candidate.get("url"),
+        color_score_percent=0,
+        requirements=[
+            TrafficLightRequirement(
+                requirement="Оценка не выполнена",
+                resume_evidence="",
+                match_percent=0,
+                difference_comment="Кандидат не прошел фильтр стабильности или не удалось получить/оценить резюме.",
+            )
+        ],
+    )
+
+
+def _merge_traffic_light_with_source_candidates(
+    candidates_for_tl: list[dict[str, Any]],
+    scored_candidates: list[TrafficLightCandidate],
+) -> list[TrafficLightCandidate]:
+    # Светофор должен возвращать тот же набор кандидатов, что показан в таблице.
+    by_id = {str(item.id): item for item in scored_candidates}
+    merged: list[TrafficLightCandidate] = []
+    for src in candidates_for_tl:
+        src_id = str(src.get("id") or "")
+        merged.append(by_id.get(src_id) or _build_unscored_traffic_light_candidate(src))
+    return merged
+
+
 async def _collect_traffic_light_candidates(
     hh: HHSearchService,
     payload: SearchRequest,
@@ -323,12 +493,6 @@ async def _collect_traffic_light_candidates(
         "_collect_traffic_light_candidates.start",
         input_count=len(candidates_for_tl),
         ids=[str(c.get("id")) for c in candidates_for_tl if c.get("id")],
-        stability_params={
-            "min_stay_months": payload.min_stay_months,
-            "allowed_short_jobs": payload.allowed_short_jobs,
-            "jump_mode": payload.jump_mode,
-            "max_not_employed_months": payload.max_not_employed_months,
-        },
     )
     traffic_light_service = TrafficLightService()
     import asyncio
@@ -361,23 +525,8 @@ async def _collect_traffic_light_candidates(
                 return None
 
             exp_list = resume_data.get("experience")
-            passed = candidate_passes_job_stability(
-                exp_list if isinstance(exp_list, list) else None,
-                min_stay_months=payload.min_stay_months,
-                allowed_short_jobs=payload.allowed_short_jobs,
-                jump_mode=payload.jump_mode,
-                max_not_employed_months=payload.max_not_employed_months,
-            )
-            if not passed:
-                trace_step(
-                    _log,
-                    "workflow",
-                    "tl_candidate.stability_reject",
-                    candidate_id=str(candidate_id),
-                )
-                return None
-
             candidate_prj_exp = _extract_candidate_prj_exp(resume_data)
+            full_exp = _normalize_full_experience(resume_data)
             trace_step(
                 _log,
                 "workflow",
@@ -400,6 +549,11 @@ async def _collect_traffic_light_candidates(
             except Exception:
                 trace_step(_log, "workflow", "tl_candidate.llm_error", candidate_id=str(candidate_id))
                 return None
+            try:
+                tl_candidate = tl_candidate.model_copy(update={"experience_full": full_exp})
+            except Exception:
+                # If pydantic rejects something unexpected, keep candidate without full experience.
+                pass
             trace_step(
                 _log,
                 "workflow",
@@ -417,127 +571,61 @@ async def _collect_traffic_light_candidates(
 
 @router.post("/svetofor", response_model=SvetoforResponse, response_model_exclude_none=True)
 async def svetofor(payload: SearchRequest):
-    trace_step(
-        _log,
-        "workflow",
-        "svetofor.start",
-        svetofor_top_x=payload.svetofor_top_x,
-        selected_level=payload.selected_level,
-        request_preview=(payload.request_text or "")[:300],
-    )
+    request_text = payload.request_text or PromptService().get_default_request_text()
+    trace_step(_log, "workflow", "svetofor.start", request_preview=(request_text or "")[:300])
     area_id = payload.area_id or settings.area_id
-    professional_roles = payload.professional_roles or settings.professional_roles
 
-    queries, llm_raw, started_at, bool_finished_at = _run_query_generation(
-        request_text=payload.request_text,
-        system_prompt_override=payload.system_prompt_override,
-        user_prompt_override=payload.user_prompt_override,
-        queries_override=payload.queries_override,
-    )
-
-    token_source = settings.token_source
-    hh = HHSearchService(
-        token_url=settings.hh_token_url,
-        token_source=token_source,
-    )
-    found_counts, candidates_by_level_raw, full_queries, web_urls = hh.search_counts_and_candidates(
+    top_x = max(1, int(payload.candidates_limit))
+    search_payload = payload.model_copy(update={"candidates_limit": top_x})
+    (
         queries,
-        source_text=payload.request_text,
-        area_id=area_id,
-        professional_roles=professional_roles,
-        per_page=payload.candidates_limit,
-    )
-    hh_finished_at = datetime.utcnow()
-    trace_step(_log, "workflow", "svetofor.hh_done", found_counts=found_counts)
+        llm_raw,
+        found_counts,
+        candidates_by_level_raw,
+        full_queries,
+        web_urls,
+        final_boolean_query,
+        _applied_requirements,
+        stage_attempts,
+        started_at,
+        bool_finished_at,
+        hh_finished_at,
+        total_iterations,
+        prompt_restarts,
+    ) = _run_search_with_restarts(payload=search_payload, request_text=request_text, area_id=area_id)
 
-    candidates_by_level: dict[str, list[dict]] = {}
-    for level, items in candidates_by_level_raw.items():
-        norm: list[dict] = []
-        for it in items or []:
-            if not isinstance(it, dict):
-                continue
-            norm.append(
-                {
-                    "id": it.get("id"),
-                    "title": it.get("title"),
-                    "url": it.get("url"),
-                    "alternate_url": it.get("alternate_url"),
-                    "created_at": it.get("created_at"),
-                    "updated_at": it.get("updated_at"),
-                    "age": it.get("age"),
-                    "area": it.get("area"),
-                    "employer": it.get("employer"),
-                    "salary": it.get("salary"),
-                    "experience": it.get("experience"),
-                    "skills": it.get("skills") if isinstance(it.get("skills"), list) else [],
-                    "tags": it.get("tags") if isinstance(it.get("tags"), list) else [],
-                    "first_name": it.get("first_name"),
-                    "last_name": it.get("last_name"),
-                }
-            )
-        candidates_by_level[level] = norm
-
-    # Важно: светофор должен строиться по выбранному уровню (таблице) из UI.
-    # Если уровень не задан/некорректный — фолбэк на "лучший" по наличию кандидатов.
-    selected_level = (
-        payload.selected_level
-        if payload.selected_level and payload.selected_level in candidates_by_level
-        else _pick_best_level_by_candidates(candidates_by_level)
-    )
-
-    selected_list = candidates_by_level.get(selected_level, []) or []
-    top_x = max(1, int(payload.svetofor_top_x))
+    hh = HHSearchService(token_url=settings.hh_token_url, token_source=settings.token_source)
+    candidates_by_level = _normalize_candidates_by_level(candidates_by_level_raw)
+    selected_list = candidates_by_level.get("Основной", []) or []
     candidates_for_tl = selected_list[:top_x]
-    trace_step(
-        _log,
-        "workflow",
-        "svetofor.selection",
-        selected_level=selected_level,
-        top_x=top_x,
-        shortlist_size=len(candidates_for_tl),
-    )
 
-    traffic_light_candidates = await _collect_traffic_light_candidates(hh, payload, candidates_for_tl)
-    traffic_light_candidates = sorted(traffic_light_candidates, key=lambda x: x.color_score_percent, reverse=True)
+    scored_candidates = await _collect_traffic_light_candidates(hh, payload, candidates_for_tl)
+    traffic_light_candidates = sorted(scored_candidates, key=lambda x: x.color_score_percent, reverse=True)[:top_x]
+
+    scored_ids = {str(item.id) for item in traffic_light_candidates}
+    kept_candidates = [c for c in selected_list if str(c.get("id") or "") in scored_ids]
+    found_count = len(kept_candidates)
 
     finished_at = datetime.utcnow()
-    trace_step(_log, "workflow", "svetofor.tl_sorted", n=len(traffic_light_candidates))
-
-    excel_b64, excel_fn = _excel_optional_b64(
-        payload,
-        level_queries=queries,
-        queries_with_exclusions=full_queries,
-        hh_search_urls=web_urls,
-        selected_level=selected_level,
-        found_counts=found_counts,
-        candidates_by_level_raw=candidates_by_level_raw,
-        traffic_light_candidates=traffic_light_candidates,
-        started_at=started_at,
-        bool_finished_at=bool_finished_at,
-        hh_finished_at=hh_finished_at,
-        finished_at=finished_at,
-        ran_traffic_light=True,
-    )
-
+    final_search_url = web_urls.get("Основной")
     return SvetoforResponse(
         llm_raw=llm_raw,
         queries=queries,  # type: ignore[arg-type]
         queries_with_exclusions=full_queries,  # type: ignore[arg-type]
         hh_search_urls=web_urls,  # type: ignore[arg-type]
-        found_counts=found_counts,  # type: ignore[arg-type]
-        selected_level=selected_level,  # type: ignore[arg-type]
-        token_source_used=token_source,  # type: ignore[arg-type]
-        candidates_by_level=candidates_by_level,  # type: ignore[arg-type]
+        found_count=found_count,
+        candidates=kept_candidates,  # type: ignore[arg-type]
         started_at=started_at,
         bool_finished_at=bool_finished_at,
         hh_finished_at=hh_finished_at,
         finished_at=finished_at,
-        ran_traffic_light=True,
+        final_boolean_query=final_boolean_query,
+        final_search_url=final_search_url,
+        stage_attempts=stage_attempts,  # type: ignore[arg-type]
+        total_iterations=total_iterations,
+        prompt_restarts=prompt_restarts,
         traffic_light_candidates=traffic_light_candidates,  # type: ignore[arg-type]
-        excel_base64=excel_b64,
-        excel_filename=excel_fn,
     )
-    trace_step(_log, "workflow", "svetofor.response_ready", tl_count=len(traffic_light_candidates))
 
 
 @router.post("/traffic_light", response_model=TrafficLightFromCandidatesResponse, response_model_exclude_none=True)
@@ -552,9 +640,7 @@ async def traffic_light_from_candidates(payload: TrafficLightFromCandidatesReque
         _log,
         "workflow",
         "traffic_light_from_candidates.start",
-        selected_level=payload.selected_level,
         incoming_candidates=len(payload.candidates or []),
-        top_x=payload.svetofor_top_x,
     )
     token_source = settings.token_source
     hh = HHSearchService(
@@ -562,225 +648,99 @@ async def traffic_light_from_candidates(payload: TrafficLightFromCandidatesReque
         token_source=token_source,
     )
 
-    level: LevelName = payload.selected_level
-    top_x = max(1, int(payload.svetofor_top_x))
+    top_x = max(1, len(payload.candidates or []))
 
     candidates_for_tl: list[dict[str, Any]] = []
     for c in (payload.candidates or [])[:top_x]:
         # Pydantic model -> dict with all fields (including first/last name).
         candidates_for_tl.append(c.model_dump())
 
-    # Переиспользуем существующую логику, которая ожидает SearchRequest для job-stability фильтров.
-    search_like = SearchRequest(
-        request_text=payload.request_text,
-        selected_level=level,
-        candidates_limit=len(candidates_for_tl) or 1,
-        min_stay_months=payload.min_stay_months,
-        allowed_short_jobs=payload.allowed_short_jobs,
-        jump_mode=payload.jump_mode,
-        max_not_employed_months=payload.max_not_employed_months,
-        svetofor_top_x=top_x,
-    )
+    # Переиспользуем существующую логику, которая ожидает SearchRequest для светофора.
+    search_like = SearchRequest(request_text=payload.request_text, candidates_limit=len(candidates_for_tl) or 1)
 
-    traffic_light_candidates = await _collect_traffic_light_candidates(hh, search_like, candidates_for_tl)
-    traffic_light_candidates = sorted(traffic_light_candidates, key=lambda x: x.color_score_percent, reverse=True)
+    scored_candidates = await _collect_traffic_light_candidates(hh, search_like, candidates_for_tl)
+    traffic_light_candidates = _merge_traffic_light_with_source_candidates(candidates_for_tl, scored_candidates)
     trace_step(_log, "workflow", "traffic_light_from_candidates.done", n=len(traffic_light_candidates))
 
-    return TrafficLightFromCandidatesResponse(
-        selected_level=level,
-        traffic_light_candidates=traffic_light_candidates,  # type: ignore[arg-type]
-    )
+    return TrafficLightFromCandidatesResponse(traffic_light_candidates=traffic_light_candidates)  # type: ignore[arg-type]
 
 
-@router.post("/export_excel")
-async def export_excel(payload: SearchRequest):
+@router.post("/screening", response_model=ScreeningResponse, response_model_exclude_none=True)
+async def screening(payload: ScreeningRequest):
     """
-    Скачивание Excel (бинарный поток). Логика совпадает с опцией include_excel у /search и /svetofor.
+    Скрининг по выбранным кандидатам:
+    - параллельно запускает "Светофор" (ColorScore) и "Общие требования" (general_req_prompt.txt)
+    - резюме догружается по id (HH API) для извлечения проектного опыта
     """
     trace_step(
         _log,
         "workflow",
-        "export_excel.start",
-        include_traffic_light=payload.include_traffic_light,
-        has_precomputed_tl=bool(payload.traffic_light_candidates_for_excel),
+        "screening.start",
+        candidates=len(payload.candidates or []),
     )
-    if xlsxwriter is None:
-        trace_step(_log, "workflow", "export_excel.fail", reason="no_xlsxwriter")
-        raise HTTPException(status_code=500, detail="xlsxwriter is not installed on server")
-
-    started_at = datetime.utcnow()
-
-    queries, _llm_raw, gen_started, bool_finished_at = _run_query_generation(
-        request_text=payload.request_text,
-        system_prompt_override=payload.system_prompt_override,
-        user_prompt_override=payload.user_prompt_override,
-        queries_override=payload.queries_override,
-    )
-    # Старт замера — момент начала этапа булевых запросов (как в прежней реализации).
-    started_at = gen_started
-
-    area_id = payload.area_id or settings.area_id
-    professional_roles = payload.professional_roles or settings.professional_roles
-
     token_source = settings.token_source
     hh = HHSearchService(
         token_url=settings.hh_token_url,
         token_source=token_source,
     )
-    found_counts, candidates_by_level_raw, full_queries, web_urls = hh.search_counts_and_candidates(
-        queries,
-        source_text=payload.request_text,
-        area_id=area_id,
-        professional_roles=professional_roles,
-        per_page=payload.candidates_limit,
-    )
-    hh_finished_at = datetime.utcnow()
+    traffic_light_service = TrafficLightService()
+    general_req_service = GeneralRequirementsService()
 
-    traffic_light_candidates: list = []
-    if payload.include_traffic_light and payload.traffic_light_candidates_for_excel:
-        traffic_light_candidates = list(payload.traffic_light_candidates_for_excel)
-    elif payload.include_traffic_light and payload.svetofor_top_x and payload.svetofor_top_x > 0:
-        selected_level = _pick_best_level_by_candidates(
-            {
-                k: (v or [])
-                for k, v in candidates_by_level_raw.items()
-                if isinstance(v, list)
-            }
-        )
-        selected_list = candidates_by_level_raw.get(selected_level, []) or []
-        top_x = max(1, int(payload.svetofor_top_x))
-        candidates_for_tl = selected_list[:top_x]
-        traffic_light_candidates = await _collect_traffic_light_candidates(hh, payload, candidates_for_tl)
+    import asyncio
 
-    trace_step(_log, "workflow", "export_excel.after_search", found_counts=found_counts, tl_stage=len(traffic_light_candidates))
+    semaphore = asyncio.Semaphore(6)
 
-    if traffic_light_candidates:
-        def _score_value(item: object) -> float:
-            raw = getattr(item, "color_score_percent", 0)
-            if isinstance(raw, str):
-                raw = raw.replace("%", "").strip()
+    async def process_one(cand: dict[str, Any]) -> tuple[TrafficLightCandidate, dict[str, Any]]:
+        async with semaphore:
+            cid = str(cand.get("id") or "")
+            name = _candidate_name(cand) or "-"
+            resume_data = await asyncio.to_thread(hh.hh.get_resume_by_id, cid)
+            candidate_prj_exp = _extract_candidate_prj_exp(resume_data or {}) if isinstance(resume_data, dict) else ""
+            full_exp = _normalize_full_experience(resume_data or {}) if isinstance(resume_data, dict) else []
+
+            tl_task = asyncio.to_thread(
+                traffic_light_service.generate_candidate_traffic_light,
+                request_text=payload.request_text,
+                candidate_prj_exp=candidate_prj_exp,
+                candidate_id=cid,
+                candidate_name=name,
+                title=cand.get("title"),
+                location=(cand.get("area") or {}).get("name") if isinstance(cand.get("area"), dict) else None,
+                resume_url=cand.get("alternate_url") or cand.get("url"),
+            )
+            gr_task = asyncio.to_thread(
+                general_req_service.generate_candidate_review,
+                cust_req_text=payload.general_requirements_text,
+                candidate_prj_exp=candidate_prj_exp,
+                candidate_id=cid,
+                candidate_name=name,
+            )
+            (tl_candidate, _), (review_text, prompt, llm_raw) = await asyncio.gather(tl_task, gr_task)
             try:
-                return float(raw or 0)
-            except (TypeError, ValueError):
-                return 0.0
-
-        traffic_light_candidates = sorted(traffic_light_candidates, key=_score_value, reverse=True)
-
-    finished_at = datetime.utcnow()
-
-    selected_level = payload.selected_level or _pick_best_level_by_candidates(
-        {
-            k: (v or [])
-            for k, v in candidates_by_level_raw.items()
-            if isinstance(v, list)
-        }
-    )
-
-    raw_bytes, filename = build_search_excel_bytes(
-        request_text=payload.request_text,
-        level_queries=queries,
-        queries_with_exclusions=full_queries,
-        hh_search_urls=web_urls,
-        selected_level=selected_level,
-        found_counts=found_counts,
-        candidates_by_level_raw=candidates_by_level_raw,
-        traffic_light_candidates=traffic_light_candidates,
-        started_at=started_at,
-        bool_finished_at=bool_finished_at,
-        hh_finished_at=hh_finished_at,
-        finished_at=finished_at,
-        ran_traffic_light=bool(payload.include_traffic_light),
-    )
-    trace_step(_log, "workflow", "export_excel.built", filename=filename, size=len(raw_bytes))
-    output = io.BytesIO(raw_bytes)
-    headers = {
-        "Content-Disposition": f'attachment; filename="{filename}"',
-        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }
-    return StreamingResponse(output, media_type=headers["Content-Type"], headers=headers)
-
-
-@router.post("/export_excel_ui")
-async def export_excel_ui(payload: ExportExcelUiRequest):
-    """
-    Скачивание Excel (бинарный поток) без повторного запуска поиска HH.
-    UI передаёт уже полученные результаты поиска и (опционально) светофоры по уровням.
-    """
-    trace_step(
-        _log,
-        "workflow",
-        "export_excel_ui.start",
-        selected_level=payload.selected_level,
-        tl_levels=list((payload.traffic_lights_by_level or {}).keys()) if payload.traffic_lights_by_level else [],
-    )
-    if xlsxwriter is None:
-        trace_step(_log, "workflow", "export_excel_ui.fail", reason="no_xlsxwriter")
-        raise HTTPException(status_code=500, detail="xlsxwriter is not installed on server")
-
-    now = datetime.utcnow()
-    started_at = payload.started_at or now
-    bool_finished_at = payload.bool_finished_at or started_at
-    hh_finished_at = payload.hh_finished_at or bool_finished_at
-    fallback_finished = payload.finished_at or hh_finished_at
-
-    # UI уже прислал нормализованные данные.
-    candidates_by_level_raw: dict[str, list[Any]] = {}
-    for lvl, items in (payload.candidates_by_level or {}).items():
-        out: list[Any] = []
-        for c in items or []:
-            # Candidate model -> dict
-            try:
-                out.append(c.model_dump())
+                tl_candidate = tl_candidate.model_copy(update={"experience_full": full_exp})
             except Exception:
-                out.append(c)
-        candidates_by_level_raw[lvl] = out
+                pass
+            llm_json = _parse_llm_markdown_json_any(llm_raw)
+            checks = _extract_general_requirements_checks(llm_json)
+            gr = {
+                "id": cid,
+                "candidate_name": name,
+                "review_text": review_text,
+                "checks": checks,
+                "debug_prompt": prompt,
+                "debug_llm_raw": llm_json,
+            }
+            return tl_candidate, gr
 
-    traffic_light_candidates_by_level: dict[str, list[Any]] | None = None
-    ran_traffic_light = bool(payload.ran_traffic_light)
-    if payload.traffic_lights_by_level:
-        traffic_light_candidates_by_level = {}
-        for lvl, items in payload.traffic_lights_by_level.items():
-            out_tl: list[Any] = []
-            for c in items or []:
-                try:
-                    out_tl.append(c.model_dump())
-                except Exception:
-                    out_tl.append(c)
-            if out_tl:
-                traffic_light_candidates_by_level[lvl] = out_tl
-        ran_traffic_light = ran_traffic_light or bool(traffic_light_candidates_by_level)
+    candidates_for_processing: list[dict[str, Any]] = [c.model_dump() for c in (payload.candidates or [])]
+    results = await asyncio.gather(*(process_one(c) for c in candidates_for_processing))
+    tl_candidates = [r[0] for r in results]
+    general_reqs = [r[1] for r in results]
 
-    finished_at = fallback_finished if not ran_traffic_light else (payload.finished_at or datetime.utcnow())
-    trace_step(
-        _log,
-        "workflow",
-        "export_excel_ui.timing_input",
-        started_at=started_at.isoformat(),
-        bool_finished_at=bool_finished_at.isoformat(),
-        hh_finished_at=hh_finished_at.isoformat(),
-        finished_at=finished_at.isoformat(),
-        ran_traffic_light=ran_traffic_light,
+    trace_step(_log, "workflow", "screening.done", tl=len(tl_candidates), gr=len(general_reqs))
+    return ScreeningResponse(
+        traffic_light_candidates=tl_candidates,
+        general_requirements=general_reqs,  # type: ignore[arg-type]
     )
-    raw_bytes, filename = build_search_excel_bytes(
-        request_text=payload.request_text,
-        level_queries=payload.queries,
-        queries_with_exclusions=payload.queries_with_exclusions,
-        hh_search_urls=payload.hh_search_urls,
-        selected_level=payload.selected_level,
-        found_counts=payload.found_counts,
-        candidates_by_level_raw=candidates_by_level_raw,
-        traffic_light_candidates=[],
-        traffic_light_candidates_by_level=traffic_light_candidates_by_level,
-        started_at=started_at,
-        bool_finished_at=bool_finished_at,
-        hh_finished_at=hh_finished_at,
-        finished_at=finished_at,
-        ran_traffic_light=ran_traffic_light,
-    )
-    output = io.BytesIO(raw_bytes)
-    headers = {
-        "Content-Disposition": f'attachment; filename="{filename}"',
-        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }
-    trace_step(_log, "workflow", "export_excel_ui.built", filename=filename, size=len(raw_bytes))
-    return StreamingResponse(output, media_type=headers["Content-Type"], headers=headers)
+
+

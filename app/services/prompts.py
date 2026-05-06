@@ -19,3 +19,6 @@ class PromptService:
     def get_traffic_light_prompt_template(self) -> str:
         return self.fm.read_txt("traffic_light_prompt.txt")
 
+    def get_general_requirements_prompt_template(self) -> str:
+        return self.fm.read_txt("general_req_prompt.txt")
+

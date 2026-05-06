@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from app.clients.llm_client import LLMClient
@@ -12,6 +13,25 @@ logger = logging.getLogger(__name__)
 
 
 class QueryGenerator:
+    def _prepare_for_json(self, text: str) -> str:
+        text = (text or "").replace("\n", " ").replace("\r", " ").replace("\t", " ")
+        text = re.sub(r"\s+", " ", text).strip()
+        text = text.replace("\\", "\\\\")
+        text = text.replace('"', '\\"')
+        return text
+
+    def _normalize_lines(self, text: str) -> str:
+        parts = [p.strip() for p in re.split(r"(?:\n|;)+", text or "") if p.strip()]
+        out: list[str] = []
+        for item in parts:
+            s = item
+            if not s.startswith("-"):
+                s = f"- {s}"
+            if not s.endswith(";"):
+                s = f"{s};"
+            out.append(s)
+        return "\n".join(out)
+
     """Генерирует булевы запросы трех уровней через LLM."""
 
     def __init__(self, llm_url: str, llm_token_param: str, txt_folder: str = "txt", output_folder: str = "logs"):
@@ -48,8 +68,10 @@ class QueryGenerator:
             has_system_override=system_prompt_override is not None,
             has_user_override=user_prompt_override is not None,
         )
+        prepared_for_json = self._prepare_for_json(request_text)
+        normalized_for_llm = self._normalize_lines(prepared_for_json)
         prompt = self._build_prompt(
-            request_text,
+            normalized_for_llm,
             system_prompt_override=system_prompt_override,
             user_prompt_override=user_prompt_override,
         )

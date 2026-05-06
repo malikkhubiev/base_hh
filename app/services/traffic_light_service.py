@@ -12,13 +12,14 @@ from app.core.tracing import trace_step
 from app.services.prompts import PromptService
 
 logger = logging.getLogger(__name__)
+BLOCK_REQUIRED = "Обязательно"
 
 
 class TrafficLightService:
     """
     Строит "Светофор-таблицу" для кандидата:
     - формирует prompt из traffic_light_prompt.txt
-    - вызывает LLM (ожидается JSON формата из task.md)
+    - вызывает LLM (ожидается JSON формат)
     - извлекает requirements.items
     - считает ColorScore
     """
@@ -27,11 +28,44 @@ class TrafficLightService:
         self.prompt_service = PromptService(txt_folder=txt_folder)
         self.llm = LLMClient(llm_url=settings.llm_url, token_param=settings.llm_token_param)
 
+    def _extract_required_request_text(self, request_text: str) -> str:
+        """
+        Оставляет только блок "# Обязательно" из текста требований.
+        Если блок не найден, возвращает исходный текст.
+        """
+        source = (request_text or "").strip()
+        if not source:
+            return ""
+
+        header_pattern = re.compile(r"^#\s*(Обязательно|Желательно|Задачи)\s*:?\s*(.*)$", re.IGNORECASE)
+        current_block: str | None = None
+        required_lines: list[str] = []
+
+        for raw_line in re.split(r"\n+", source):
+            line = raw_line.strip()
+            if not line:
+                continue
+            match = header_pattern.match(line)
+            if match:
+                block_name = (match.group(1) or "").capitalize()
+                current_block = block_name
+                inline_text = (match.group(2) or "").strip()
+                if current_block == BLOCK_REQUIRED and inline_text:
+                    required_lines.append(inline_text)
+                continue
+            if current_block == BLOCK_REQUIRED:
+                required_lines.append(line)
+
+        if required_lines:
+            return "\n".join(required_lines)
+        return source
+
     def build_prompt(self, *, request_text: str, candidate_prj_exp: str) -> str:
         template = self.prompt_service.get_traffic_light_prompt_template()
+        required_request_text = self._extract_required_request_text(request_text)
         # В шаблоне используются плейсхолдеры вида ${custReqText} и ${candidatePrjExp}
         return (
-            template.replace("${custReqText}", request_text)
+            template.replace("${custReqText}", required_request_text)
             .replace("${candidatePrjExp}", candidate_prj_exp)
         )
 

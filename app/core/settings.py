@@ -15,10 +15,8 @@ class Settings(BaseModel):
     token_source: str = "ssp"
 
     area_id: int = Field(default_factory=lambda: int(os.getenv("AREA_ID", "113")))
-    professional_roles: list[str] = Field(
-        default_factory=lambda: [r.strip() for r in os.getenv("PROFESSIONAL_ROLES", "96,113").split(",") if r.strip()]
-    )
 
-
+    # DB (PostgreSQL recommended). Example: postgresql://user:pass@localhost:5432/hh_optimizer
+    database_url: str = Field(default_factory=lambda: os.getenv("DATABASE_URL", ""))
 settings = Settings()
 

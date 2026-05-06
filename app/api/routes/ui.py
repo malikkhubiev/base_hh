@@ -227,13 +227,8 @@ def index() -> str:
         <div class="title">Поиск резюме (LLM → булевы → HH)</div>
       </div>
 
-      <div class="row" style="justify-content: flex-end;">
-        <button id="btnOpenBot" class="secondary" type="button" title="Открыть UI бота (/ui/bot)">
-          HH Чат
-        </button>
-      </div>
-
       <textarea id="requestText" placeholder="Вставьте запрос/требования..."></textarea>
+      <textarea id="generalReqText" class="prompt-editor" placeholder="Общие требования (для Скрининга)..." style="min-height:120px;"></textarea>
 
       <div class="row">
         <div class="stack" style="flex:2; min-width:260px;">
@@ -246,35 +241,9 @@ def index() -> str:
         <div class="stack" style="flex:3; min-width:260px;">
           <div class="row">
             <label class="pill">
-              Кол-во кандидатов в таблице
+              Минимум кандидатов
               <input type="number" id="candLimit" value="20" min="1" max="200" />
             </label>
-            <label class="pill">
-              Светофор: первые X кандидатов
-              <input type="number" id="svetoforTopX" value="20" min="1" max="200" />
-            </label>
-            <label class="pill">
-              Минимальный срок (мес)
-              <input type="number" id="minStayMonths" value="3" min="1" max="240" />
-            </label>
-          </div>
-          <div class="row">
-            <label class="pill">
-              Лимит коротких мест
-              <input type="number" id="allowedShortJobs" value="2" min="0" max="50" />
-            </label>
-            <label class="pill">
-              Режим прыгуна
-              <select id="jumpMode" style="margin-left:8px;">
-                <option value="consecutive">подряд прыгун</option>
-                <option value="total">вообще прыгун</option>
-              </select>
-            </label>
-            <label class="pill">
-              Максимум не в деле (мес)
-              <input type="number" id="maxNotEmployedMonths" value="6" min="0" max="240" />
-            </label>
-            <label class="pill"><input type="checkbox" id="showPrompt" /> показать промпт</label>
           </div>
         </div>
       </div>
@@ -282,17 +251,7 @@ def index() -> str:
       <div id="status" class="subtitle"></div>
       <div id="progressStage" class="subtitle" style="color:#333;"></div>
       <div id="progressTimes" class="subtitle" style="color:#333;"></div>
-      <div id="promptBlock" class="llm" style="display:none;">
-        <div class="label subtitle" style="color:#000;">system prompt (редактируемый)</div>
-        <textarea id="systemPromptText" class="prompt-editor" placeholder="Здесь можно отредактировать system prompt"></textarea>
-        <div class="label subtitle" style="color:#000; margin-top:10px;">user prompt (редактируемый)</div>
-        <textarea id="userPromptText" class="prompt-editor" placeholder="Шаблон user prompt, используйте {vac_reqs} для текста запроса"></textarea>
-      </div>
-
-      <div id="llmBlock" class="llm" style="display:none;">
-        <div class="label subtitle" style="color:#000;">ответ LLM (raw)</div>
-        <pre id="llmRaw" class="mono" style="white-space:pre-wrap; font-size:13px;"></pre>
-      </div>
+      <!-- debug blocks removed by task -->
 
       <div id="queries" class="grid3" style="display:none;"></div>
       <div id="queryLinks" class="stack" style="display:none;"></div>
@@ -300,15 +259,15 @@ def index() -> str:
       <div id="results" style="display:none;">
         <div class="divider"></div>
         <div class="subtitle" id="pickedInfo"></div>
+        <div id="finalQueryInfo" class="card" style="margin-top:10px; display:none;"></div>
         <div class="divider"></div>
-        <div id="levelTabs" class="row" style="justify-content:flex-start; gap:10px; flex-wrap:wrap;"></div>
+        <div id="levelTabs" class="row" style="display:none;"></div>
         <div id="tableOne" class="card" style="margin-top:12px;"></div>
 
         <div class="divider"></div>
         <div id="trafficLightBlock" style="display:none;">
           <div class="row" style="justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
             <div class="subtitle" id="trafficLightTitle">Светофор (ColorScore)</div>
-            <button class="secondary" id="btnDownloadTlExcel" type="button" disabled>Скачать Excel</button>
           </div>
           <div id="trafficLightTabs" class="row" style="justify-content:flex-start; gap:10px; flex-wrap:wrap; margin-top:10px;"></div>
           <div style="overflow:auto; margin-top:10px;">
@@ -324,10 +283,6 @@ def index() -> str:
             </table>
           </div>
         </div>
-      </div>
-
-      <div class="row" style="justify-content:center; margin-top:18px;">
-        <button class="secondary" id="btnDownloadFullExcel" type="button" disabled>Скачать полный Excel</button>
       </div>
     </div>
   </div>
@@ -348,17 +303,39 @@ def index() -> str:
       </div>
 
       <div id="tlModalTableWrap" style="overflow:auto; max-height:65vh;">
-        <table>
-          <thead>
-            <tr>
-              <th>Запрос</th>
-              <th>Резюме</th>
-              <th>Итог</th>
-              <th>Несоответствие</th>
-            </tr>
-          </thead>
-          <tbody id="tlModalTbody"></tbody>
-        </table>
+        <div class="grid3" style="grid-template-columns: 1fr 1fr; gap:12px;">
+          <div class="card">
+            <div class="label">Светофор (ColorScore)</div>
+            <div style="overflow:auto; margin-top:8px;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Требование</th>
+                    <th>Резюме</th>
+                    <th>Итог</th>
+                    <th>Несоответствие</th>
+                  </tr>
+                </thead>
+                <tbody id="tlModalTbody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card">
+            <div class="label">Общие требования (true/false)</div>
+            <div style="overflow:auto; margin-top:8px;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>OK</th>
+                    <th>Проверка</th>
+                    <th>Доказательство</th>
+                  </tr>
+                </thead>
+                <tbody id="tlModalChecksTbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div id="tlModalProjectExpWrap" class="llm" style="display:none; overflow:auto; max-height:65vh;">
@@ -380,28 +357,27 @@ def index() -> str:
 
 <script>
   const el = (id) => document.getElementById(id);
+  const NL = String.fromCharCode(10);
+  const NNL = NL + NL;
   const state = {
-    candidatesByLevel: null,
-    foundCounts: null,
+    candidates: [],
+    foundCount: 0,
     queries: null,
     queriesWithExclusions: null,
     hhSearchUrls: null,
-    selectedLevel: "Уровень 2",
-    systemPromptLoaded: false,
-    userPromptLoaded: false,
     trafficLightById: null,
     trafficLightCandidates: [],
-    hasTrafficLightRun: false,
-    trafficLightByLevel: {},
-    activeTrafficLevel: null,
-    excelByLevel: {},
-    tlExcelByLevel: {},
-    fullExcelBlobUrl: null,
-    fullExcelFileName: "",
+    trafficLightCandidatesLast: [],
     startedAt: null,
     boolFinishedAt: null,
     hhFinishedAt: null,
     finishedAt: null,
+    finalBooleanQuery: "",
+    stageAttempts: [],
+    totalIterations: 0,
+    promptRestarts: 0,
+    selectedCandidateIds: new Set(),
+    screeningById: {},
   };
 
   function setStatus(text) { el("status").textContent = text || ""; }
@@ -411,33 +387,11 @@ def index() -> str:
     el("btnSearch").disabled = b;
     const candT = el("candLimit");
     if (candT) candT.disabled = b;
-    const extraIds = [
-      "svetoforTopX",
-      "minStayMonths",
-      "allowedShortJobs",
-      "jumpMode",
-      "maxNotEmployedMonths",
-      "btnDownloadFullExcel",
-      "btnDownloadTlExcel",
-    ];
+    const extraIds = ["btnScreening"];
     extraIds.forEach((id) => {
       const t = el(id);
       if (t) t.disabled = b;
     });
-    const promptT = el("systemPromptText");
-    if (promptT) promptT.disabled = b;
-    const userPromptT = el("userPromptText");
-    if (userPromptT) userPromptT.disabled = b;
-  }
-
-  function getSystemPromptOverride() {
-    if (!el("showPrompt").checked) return null;
-    return el("systemPromptText").value;
-  }
-
-  function getUserPromptOverride() {
-    if (!el("showPrompt").checked) return null;
-    return el("userPromptText").value;
   }
 
   function getCandidatesLimit() {
@@ -454,26 +408,7 @@ def index() -> str:
     return Math.min(maxV, Math.max(minV, Math.trunc(v)));
   }
 
-  function getSvetoforTopX() {
-    return getIntInput("svetoforTopX", 20, 1, 200);
-  }
-
-  function getMinStayMonths() {
-    return getIntInput("minStayMonths", 3, 1, 240);
-  }
-
-  function getAllowedShortJobs() {
-    return getIntInput("allowedShortJobs", 2, 0, 50);
-  }
-
-  function getMaxNotEmployedMonths() {
-    return getIntInput("maxNotEmployedMonths", 6, 0, 240);
-  }
-
-  function getJumpMode() {
-    const v = el("jumpMode")?.value;
-    return v === "total" ? "total" : "consecutive";
-  }
+  // svetofor_top_x removed: screening runs on selected candidates.
 
   function tlColorForScore(score) {
     const s = Number(score ?? 0);
@@ -499,16 +434,20 @@ def index() -> str:
     const list = Array.isArray(items) ? items : [];
     state.trafficLightCandidates = [...list];
     block.style.display = list.length ? "block" : "none";
-    if (titleEl) {
-      const lvl = state.activeTrafficLevel || state.selectedLevel || "";
-      titleEl.textContent = lvl ? `Светофор (ColorScore) — ${lvl}` : "Светофор (ColorScore)";
-    }
+    if (titleEl) titleEl.textContent = "Светофор (ColorScore) + Общие требования";
 
     list.forEach((c) => {
       const id = String(c.id ?? "");
       const score = Number(c.color_score_percent ?? 0);
+      const checks = state.screeningById?.[id]?.checks;
+      const checksList = Array.isArray(checks) ? checks : [];
+      const totalChecks = checksList.length;
+      const okChecks = checksList.filter((x) => !!x?.ok).length;
+      const checksOk = totalChecks > 0 && okChecks === totalChecks;
       const rectBg = tlColorForScore(score);
       const circleBorder = score >= 60 ? "#0b8a3a" : (score >= 40 ? "#d9b000" : "#ff4d4d");
+      const checksBorder = checksOk ? "#0b8a3a" : "#ff4d4d";
+      const checksBg = checksOk ? "#ddf8e7" : "rgba(255,120,117,.3)";
       const resumeUrl = c.resume_url || c.resumeUrl || "";
       const candidateName = c.candidate_name ?? "";
       const location = c.location ?? "";
@@ -522,16 +461,9 @@ def index() -> str:
               <div class="mono" style="font-size:16px; line-height:1;">${escapeHtml(String(score))}%</div>
               <div style="width:18px; height:18px; border-radius:50%; border:2px solid ${circleBorder}; background:${rectBg};"></div>
             </div>
-            <button
-              class="secondary"
-              type="button"
-              data-write="1"
-              ${resumeUrl ? "" : "disabled"}
-              style="padding:8px 10px; font-size:12px; text-transform:none; letter-spacing:0; line-height:1; cursor:pointer;"
-              title="Написать через страницу бота"
-            >
-              Написать
-            </button>
+            <div class="tl-rect" style="background:${totalChecks ? checksBg : "#fff"}; border-color:${totalChecks ? checksBorder : "#000"};" title="Общие требования (true/total)">
+              <div class="mono" style="font-size:14px; line-height:1;">${totalChecks ? `${okChecks}/${totalChecks}` : "-"}</div>
+            </div>
             <button
               class="secondary"
               type="button"
@@ -568,21 +500,13 @@ def index() -> str:
           openTrafficLightModal(c, "projectExp");
         };
       }
-      const writeBtn = tr.querySelector('[data-write="1"]');
-      if (writeBtn) {
-        writeBtn.onclick = (e) => {
-          e.stopPropagation();
-          if (!resumeUrl) return;
-          openBotPage(resumeUrl);
-        };
-      }
       state.trafficLightById[id] = c;
       tbody.appendChild(tr);
     });
   }
 
   function renderTrafficLightTableInto(levelName, items) {
-    const idx = levelName === "Уровень 1" ? "1" : (levelName === "Уровень 3" ? "3" : "2");
+    const idx = String(levelName || "Основной").toLowerCase().replace(/[^a-zа-я0-9]+/gi, "-");
     const block = el(`trafficLightBlock-${idx}`);
     const tbody = el(`tlTbody-${idx}`);
     if (!block || !tbody) return;
@@ -614,16 +538,6 @@ def index() -> str:
             <button
               class="secondary"
               type="button"
-              data-write="1"
-              ${resumeUrl ? "" : "disabled"}
-              style="padding:8px 10px; font-size:12px; text-transform:none; letter-spacing:0; line-height:1; cursor:pointer;"
-              title="Написать через страницу бота"
-            >
-              Написать
-            </button>
-            <button
-              class="secondary"
-              type="button"
               data-open-prj-exp="1"
               style="padding:8px 10px; font-size:12px; text-transform:none; letter-spacing:0; line-height:1; cursor:pointer;"
               title="Показать проектный опыт, который подставляется в промпт"
@@ -655,14 +569,6 @@ def index() -> str:
         openPrjExpEl.onclick = (e) => {
           e.stopPropagation();
           openTrafficLightModal(c, "projectExp");
-        };
-      }
-      const writeBtn = tr.querySelector('[data-write="1"]');
-      if (writeBtn) {
-        writeBtn.onclick = (e) => {
-          e.stopPropagation();
-          if (!resumeUrl) return;
-          openBotPage(resumeUrl);
         };
       }
       state.trafficLightById[id] = c;
@@ -703,6 +609,9 @@ def index() -> str:
       statusCircle.style.border = `2px solid ${borderColor}`;
     }
 
+    const candidateId = String(c?.id ?? "");
+    const checks = state.screeningById?.[candidateId]?.checks;
+    const checksList = Array.isArray(checks) ? checks : null;
     const reqs = Array.isArray(c?.requirements) ? c.requirements : [];
     tbody.innerHTML = "";
     reqs.forEach((it) => {
@@ -721,6 +630,23 @@ def index() -> str:
       `;
       tbody.appendChild(tr);
     });
+
+    // Render "Общие требования" рядом (если есть checks).
+    const checksTbody = el("tlModalChecksTbody");
+    if (checksTbody) {
+      checksTbody.innerHTML = "";
+      const list = checksList || [];
+      list.forEach((it) => {
+        const ok = !!it?.ok;
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td class="mono" style="font-weight:800; color:${ok ? "#0b8a3a" : "#ff4d4d"};">${ok ? "TRUE" : "FALSE"}</td>
+          <td>${escapeHtml(it?.requirement ?? "")}</td>
+          <td>${escapeHtml(it?.evidence ?? "")}</td>
+        `;
+        checksTbody.appendChild(tr);
+      });
+    }
 
     if (projectExpTextEl) {
       projectExpTextEl.textContent = String(c?.candidate_prj_exp ?? "");
@@ -756,20 +682,61 @@ def index() -> str:
     if (e.key === "Escape") el("tlModalBackdrop").style.display = "none";
   });
 
-  function renderQueries(queries, hhUrlsByLevel) {
+  function renderQueries(queries, hhUrlsByLevel, finalQuery, finalUrl) {
     const q = el("queries");
     q.innerHTML = "";
-    ["Уровень 1","Уровень 2","Уровень 3"].forEach((lvl) => {
-      const div = document.createElement("div");
-      div.className = "card";
-      div.innerHTML = `
-        <div class="label">${lvl}</div>
-        <div class="mono big">${escapeHtml(queries[lvl] || "")}</div>
-      `;
-      q.appendChild(div);
-    });
+    const firstQuery = Object.values(queries || {}).find((x) => typeof x === "string" && x) || "";
+    const text = finalQuery || firstQuery;
+    const div = document.createElement("div");
+    div.className = "card";
+    div.innerHTML = `
+      <div class="label">Итоговый запрос</div>
+      <div class="mono big">${escapeHtml(text)}</div>
+    `;
+    q.appendChild(div);
     q.style.display = "grid";
-    renderQueryLinks(queries, hhUrlsByLevel);
+    const firstUrl = Object.values(hhUrlsByLevel || {}).find((x) => typeof x === "string" && x) || "";
+    renderQueryLinks(text, finalUrl || firstUrl || buildHhSearchUrl(text));
+  }
+
+  function renderFinalQueryInfo() {
+    const box = el("finalQueryInfo");
+    if (!box) return;
+    const q = state.finalBooleanQuery || "";
+    const attempts = Array.isArray(state.stageAttempts) ? state.stageAttempts : [];
+    if (!q && !attempts.length) {
+      box.style.display = "none";
+      box.innerHTML = "";
+      return;
+    }
+    const attemptsRows = attempts.map((it) => {
+      const stage = escapeHtml(it.stage || "");
+      const query = escapeHtml(it.query || "");
+      const found = Number(it.found || 0);
+      const collected = Number(it.collected || 0);
+      const target = Number(it.target || 0);
+      const enough = !!it.enough;
+      const result = enough ? "Хватило" : "Меньше нужного";
+      return `<tr>
+        <td>${stage}</td>
+        <td class="mono">${query}</td>
+        <td>${found}</td>
+        <td>${collected} / ${target}</td>
+        <td>${result}</td>
+      </tr>`;
+    }).join("");
+    box.innerHTML = `
+      <div class="label">Итоговый булевый запрос</div>
+      <div class="mono big">${escapeHtml(q)}</div>
+      <div class="label" style="margin-top:12px;">Этапы ослабления и результаты HH</div>
+      <div style="overflow:auto; margin-top:8px;">
+        <table>
+          <thead><tr><th>Этап</th><th>Запрос</th><th>Найдено</th><th>Накоплено</th><th>Статус</th></tr></thead>
+          <tbody>${attemptsRows}</tbody>
+        </table>
+      </div>
+    `;
+    box.style.display = "block";
   }
 
   function buildHhSearchUrl(query) {
@@ -786,8 +753,6 @@ def index() -> str:
     params.set("order_by", "relevance");
     params.set("search_period", "0");
     params.set("age_to", "45");
-    // Если бекенд не отдал professional_role — оставляем дефолтные (как в проекте).
-    ["96", "113"].forEach((v) => params.append("professional_role", v));
     ["unknown", "active_search", "looking_for_offers"].forEach((v) => params.append("job_search_status", v));
     ["between3And6", "moreThan6"].forEach((v) => params.append("experience", v));
     params.set("items_on_page", "20");
@@ -801,7 +766,6 @@ def index() -> str:
       <div class="param-group">
         <div class="param-title">Текст и позиция</div>
         <div class="param-item">• text: ${escapeHtml(query || "")}</div>
-        <div class="param-item">• title: ${escapeHtml(query || "")} + anti-lead для неруководящих</div>
       </div>
       <div class="param-group">
         <div class="param-title">Локация и период</div>
@@ -815,9 +779,8 @@ def index() -> str:
         <div class="param-item">• job_search_status: unknown, active_search, looking_for_offers</div>
       </div>
       <div class="param-group">
-        <div class="param-title">Роли и пагинация</div>
-        <div class="param-item">• professional_roles: из маппинга/входных ролей</div>
-        <div class="param-item">• per_page/items_on_page: 50 (в ссылке), 20 (в API сейчас)</div>
+        <div class="param-title">Пагинация</div>
+        <div class="param-item">• per_page/items_on_page: 20</div>
       </div>
     `;
   }
@@ -835,173 +798,113 @@ def index() -> str:
     return `${str.slice(0, maxLen)}...`;
   }
 
-  function renderQueryLinks(queries, hhUrlsByLevel) {
+  function renderQueryLinks(queryText, href) {
     const wrap = el("queryLinks");
     wrap.innerHTML = "";
-    ["Уровень 1","Уровень 2","Уровень 3"].forEach((lvl) => {
-      const href = (hhUrlsByLevel && hhUrlsByLevel[lvl]) ? hhUrlsByLevel[lvl] : buildHhSearchUrl(queries[lvl] || "");
-      const div = document.createElement("div");
-      div.className = "card";
-      div.innerHTML = `
-        <div class="label">${lvl} — ссылка в HH</div>
-        <div class="mono link-preview" title="${escapeHtml(href)}">${escapeHtml(truncateMiddle(href))}</div>
-        <div class="row">
-          <button class="secondary" type="button" data-action="copy">Копировать</button>
-          <button type="button" data-action="open">Перейти</button>
-          <button class="secondary" type="button" data-action="decode">Расшифровка</button>
-        </div>
-        <div class="param-block" data-role="decode"></div>
-      `;
-      const copyBtn = div.querySelector('[data-action="copy"]');
-      const openBtn = div.querySelector('[data-action="open"]');
-      const decodeBtn = div.querySelector('[data-action="decode"]');
-      const decodeBox = div.querySelector('[data-role="decode"]');
-      copyBtn?.addEventListener("click", async () => {
-        try {
-          if (navigator.clipboard?.writeText) {
-            await navigator.clipboard.writeText(href);
-          } else {
-            const ta = document.createElement("textarea");
-            ta.value = href;
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand("copy");
-            document.body.removeChild(ta);
-          }
-          setStatus(`${lvl}: ссылка скопирована`);
-        } catch (e) {
-          setStatus("Не удалось скопировать ссылку");
-        }
-      });
-      openBtn?.addEventListener("click", () => {
-        window.open(href, "_blank", "noopener,noreferrer");
-      });
-      decodeBtn?.addEventListener("click", () => {
-        if (!decodeBox) return;
-        const shown = decodeBox.style.display === "block";
-        decodeBox.style.display = shown ? "none" : "block";
-        if (!shown) {
-          decodeBox.innerHTML = buildDecodeHtml(queries[lvl] || "");
-        }
-      });
-      wrap.appendChild(div);
+    const div = document.createElement("div");
+    div.className = "card";
+    div.innerHTML = `
+      <div class="label">Итоговая ссылка в HH</div>
+      <div class="mono link-preview" title="${escapeHtml(href)}">${escapeHtml(truncateMiddle(href))}</div>
+      <div class="row">
+        <button class="secondary" type="button" data-action="copy">Копировать</button>
+        <button type="button" data-action="open">Перейти</button>
+        <button class="secondary" type="button" data-action="decode">Расшифровка</button>
+      </div>
+      <div class="param-block" data-role="decode"></div>
+    `;
+    const copyBtn = div.querySelector('[data-action="copy"]');
+    const openBtn = div.querySelector('[data-action="open"]');
+    const decodeBtn = div.querySelector('[data-action="decode"]');
+    const decodeBox = div.querySelector('[data-role="decode"]');
+    copyBtn?.addEventListener("click", async () => {
+      try {
+        if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(href);
+        setStatus("Ссылка скопирована");
+      } catch (e) {
+        setStatus("Не удалось скопировать ссылку");
+      }
     });
+    openBtn?.addEventListener("click", () => window.open(href, "_blank", "noopener,noreferrer"));
+    decodeBtn?.addEventListener("click", () => {
+      if (!decodeBox) return;
+      const shown = decodeBox.style.display === "block";
+      decodeBox.style.display = shown ? "none" : "block";
+      if (!shown) decodeBox.innerHTML = buildDecodeHtml(queryText || "");
+    });
+    wrap.appendChild(div);
     wrap.style.display = "flex";
   }
 
-  function renderLevelTabs(foundCounts) {
-    const tabs = el("levelTabs");
-    if (!tabs) return;
-    const levels = ["Уровень 1", "Уровень 2", "Уровень 3"];
-    tabs.innerHTML = "";
-    levels.forEach((lvl) => {
-      const shown = (state.candidatesByLevel?.[lvl] || []).length;
-      const found = countForLevel(lvl, foundCounts);
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "level-tab" + (state.selectedLevel === lvl ? " active" : "");
-      btn.textContent = `${lvl} (${shown}/${found})`;
-      btn.onclick = () => {
-        state.selectedLevel = lvl;
-        renderLevelTabs(foundCounts);
-        renderActiveLevelTable(foundCounts);
-      };
-      tabs.appendChild(btn);
-    });
-    tabs.style.display = "flex";
-  }
-
-  function normalizeCount(raw, fallback = 0) {
-    const n = Number(raw);
-    return Number.isFinite(n) && n >= 0 ? n : fallback;
-  }
-
-  function countForLevel(levelName, foundCounts) {
-    const fallback = (state.candidatesByLevel?.[levelName] || []).length;
-    return normalizeCount(foundCounts?.[levelName], fallback);
-  }
-
-  function pickDefaultLevelByCounts(foundCounts, threshold = 20) {
-    const c1 = countForLevel("Уровень 1", foundCounts);
-    const c2 = countForLevel("Уровень 2", foundCounts);
-    const c3 = countForLevel("Уровень 3", foundCounts);
-
-    if (c3 >= threshold) return "Уровень 3";
-    if (c2 >= threshold) return "Уровень 2";
-    if (c1 >= threshold) return "Уровень 1";
-
-    // Фолбэк: показываем таблицу, где больше всего резюме (по данным сервера).
-    const best = [
-      { lvl: "Уровень 1", c: c1 },
-      { lvl: "Уровень 2", c: c2 },
-      { lvl: "Уровень 3", c: c3 },
-    ].sort((a, b) => (b.c - a.c) || (b.lvl.localeCompare(a.lvl)))[0];
-    return best?.lvl || "Уровень 2";
-  }
-
-  function renderActiveLevelTable(foundCounts) {
+  function renderActiveLevelTable() {
     const host = el("tableOne");
     if (!host) return;
-    const lvl = state.selectedLevel || "Уровень 2";
-    const idx = lvl === "Уровень 1" ? "1" : (lvl === "Уровень 3" ? "3" : "2");
-    const list = (state.candidatesByLevel?.[lvl] || []);
-    const count = countForLevel(lvl, foundCounts);
+    const idx = "main";
+    const list = Array.isArray(state.candidates) ? state.candidates : [];
+
+    const maxJobs = (list || []).reduce((m, c) => {
+      const exp = c?.experience_full ?? c?.experienceFull;
+      const n = Array.isArray(exp) ? exp.length : 0;
+      return Math.max(m, n);
+    }, 0);
+    const expHeaders = Array.from({ length: maxJobs }, (_, i) => `<th>Опыт #${i + 1}</th>`).join("");
 
     host.innerHTML = `
       <div class="card" style="margin-top:0;">
-        <div class="label">${lvl} — найдено: ${count}; показано: ${list.length}</div>
-        <div class="row" style="justify-content:flex-end; gap:10px; flex-wrap:wrap;">
-          <button type="button" data-action="svetofor" data-level="${escapeHtml(lvl)}">Светофор</button>
-          <button class="secondary" type="button" data-action="excel-level" data-level="${escapeHtml(lvl)}">Скачать Excel</button>
-        </div>
         <div style="overflow:auto; margin-top:10px;">
           <table>
             <thead>
               <tr>
-                <th>Do</th>
-                <th>Имя/ID</th>
+                <th>✓</th>
+                <th>Имя</th>
                 <th>Позиция</th>
                 <th>Локация</th>
                 <th>Ссылка</th>
                 <th>Возраст</th>
                 <th>ЗП</th>
+                ${expHeaders}
               </tr>
             </thead>
-            <tbody id="tbody-level-${idx}"></tbody>
+            <tbody id="tbody-level-${escapeHtml(idx)}"></tbody>
           </table>
+        </div>
+        <div class="row" style="justify-content:flex-end; margin-top:12px;">
+          <button id="btnScreening" type="button" disabled>Скрининг</button>
         </div>
       </div>
     `;
-
-    const btnS = host.querySelector('button[data-action="svetofor"]');
-    if (btnS) btnS.onclick = () => runSvetoforForLevel(lvl);
-    const btnE = host.querySelector('button[data-action="excel-level"]');
-    if (btnE) btnE.onclick = () => downloadExcelSmart(lvl);
 
     const tbody = host.querySelector(`#tbody-level-${idx}`);
     (list || []).forEach((c) => {
       const area = c.area?.name || c.area?.id || "";
       const link = c.alternate_url || c.url || "";
       const salary = c.salary?.amount ? `${c.salary.amount} ${c.salary.currency||""}` : (c.salary ? JSON.stringify(c.salary) : "");
-      const fullNameOrId = (c.first_name || c.last_name)
+      const fullName = (c.first_name || c.last_name)
         ? ((c.last_name||"") + " " + (c.first_name||"")).trim()
-        : (c.id||"");
-      const nameShort = truncateEnd(fullNameOrId, 25);
+        : "-";
+      const nameShort = truncateEnd(fullName, 25);
+      const cid = String(c.id || "");
+      const fullExp = Array.isArray(c?.experience_full) ? c.experience_full : [];
+      const expCells = Array.from({ length: maxJobs }, (_, j) => {
+        const it = fullExp[j] || null;
+        if (!it) return `<td></td>`;
+        const start = it?.start || "";
+        const end = it?.end || "";
+        const period = `${start}${(start && end) ? " — " : ""}${end}`.trim();
+        const company = it?.company || "";
+        const position = it?.position || "";
+        const areaName = it?.area?.name || it?.area?.id || "";
+        const industries = Array.isArray(it?.industries) ? it.industries : [];
+        const industriesText = industries.map((x) => x?.name).filter(Boolean).join(", ");
+        const text = [period, company, position, areaName, industriesText].filter(Boolean).join(" | ");
+        return `<td class="mono">${escapeHtml(text)}</td>`;
+      }).join("");
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>
-          <button
-            class="secondary"
-            type="button"
-            data-write="1"
-            ${link ? "" : "disabled"}
-            title="Написать в чат через страницу бота"
-            style="padding:8px 10px; font-size:12px; text-transform:none; letter-spacing:0; line-height:1; cursor:pointer;"
-          >
-            ✍
-          </button>
+          <input type="checkbox" data-select="1" ${state.selectedCandidateIds.has(cid) ? "checked" : ""} ${cid ? "" : "disabled"} />
         </td>
-        <td class="mono" title="${escapeHtml(fullNameOrId)}">${escapeHtml(nameShort)}</td>
+        <td class="mono" title="${escapeHtml(fullName)}">${escapeHtml(nameShort)}</td>
         <td>${escapeHtml(c.title || "")}</td>
         <td>${escapeHtml(area)}</td>
         <td class="${link ? "cell-actions-td" : ""}">
@@ -1014,13 +917,16 @@ def index() -> str:
         </td>
         <td>${c.age ?? ""}</td>
         <td class="mono">${escapeHtml(salary || "")}</td>
+        ${expCells}
       `;
-      const btnWrite = tr.querySelector('button[data-write="1"]');
-      if (btnWrite) {
-        btnWrite.onclick = (e) => {
-          e.stopPropagation();
-          if (!link) return;
-          openBotPage(link);
+      const chk = tr.querySelector('input[data-select="1"]');
+      if (chk) {
+        chk.onchange = () => {
+          if (!cid) return;
+          if (chk.checked) state.selectedCandidateIds.add(cid);
+          else state.selectedCandidateIds.delete(cid);
+          const btn = el("btnScreening");
+          if (btn) btn.disabled = state.selectedCandidateIds.size <= 0;
         };
       }
       const actions = tr.querySelector('[data-link-actions="1"]');
@@ -1040,7 +946,7 @@ def index() -> str:
               document.execCommand("copy");
               document.body.removeChild(ta);
             }
-            setStatus(`${lvl}: ссылка скопирована`);
+            setStatus(`Ссылка скопирована`);
           } catch (err) {
             setStatus("Не удалось скопировать ссылку");
           }
@@ -1052,34 +958,50 @@ def index() -> str:
       }
       tbody?.appendChild(tr);
     });
+
+    const btn = el("btnScreening");
+    if (btn) {
+      btn.disabled = state.selectedCandidateIds.size <= 0;
+      btn.onclick = async () => {
+        await runScreeningForSelected();
+      };
+    }
   }
 
-  function renderTrafficLightTabs() {
-    const wrap = el("trafficLightTabs");
-    if (!wrap) return;
-    wrap.innerHTML = "";
-    const levels = ["Уровень 1","Уровень 2","Уровень 3"];
-    const available = levels.filter((lvl) => Array.isArray(state.trafficLightByLevel?.[lvl]) && state.trafficLightByLevel[lvl].length);
-    if (!available.length) {
-      wrap.style.display = "none";
+  async function runScreeningForSelected() {
+    const requestText = el("requestText").value.trim();
+    const generalReqText = el("generalReqText").value.trim();
+    const list = Array.isArray(state.candidates) ? state.candidates : [];
+    const selected = list.filter((c) => state.selectedCandidateIds.has(String(c.id || "")));
+    if (!selected.length) {
+      setStatus("Выберите кандидатов для скрининга");
       return;
     }
-    wrap.style.display = "flex";
-    if (!state.activeTrafficLevel || !available.includes(state.activeTrafficLevel)) {
-      state.activeTrafficLevel = available[0];
+    setBusy(true);
+    setStatus(`Скрининг: ${selected.length} кандидатов...`);
+    try {
+      const data = await api("/api/screening", {
+        request_text: requestText,
+        general_requirements_text: generalReqText,
+        candidates: selected,
+      });
+      const tlItems = Array.isArray(data.traffic_light_candidates) ? data.traffic_light_candidates : [];
+      const gr = Array.isArray(data.general_requirements) ? data.general_requirements : [];
+      state.screeningById = {};
+      gr.forEach((it) => {
+        const cid = String(it?.id ?? "");
+        if (!cid) return;
+        state.screeningById[cid] = it;
+      });
+      renderTrafficLightTable(tlItems);
+      const tlBlock = el("trafficLightBlock");
+      if (tlBlock) tlBlock.style.display = "block";
+      setStatus("Готово.");
+    } catch (e) {
+      setStatus("Ошибка: " + e.message);
+    } finally {
+      setBusy(false);
     }
-    available.forEach((lvl) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "level-tab" + (state.activeTrafficLevel === lvl ? " active" : "");
-      btn.textContent = `Светофор ${lvl}`;
-      btn.onclick = () => {
-        state.activeTrafficLevel = lvl;
-        renderTrafficLightTabs();
-        renderTrafficLightTable(state.trafficLightByLevel[lvl] || []);
-      };
-      wrap.appendChild(btn);
-    });
   }
 
   function escapeHtml(s) {
@@ -1089,18 +1011,6 @@ def index() -> str:
       .replaceAll(">","&gt;")
       .replaceAll('"',"&quot;")
       .replaceAll("'","&#039;");
-  }
-
-  function openBotPage(resumeUrl) {
-    try {
-      const u = String(resumeUrl || "");
-      if (!u) return;
-      // Separate UI page for bot settings + webhook + auto-reply.
-      const target = `/ui/bot?resume_url=${encodeURIComponent(u)}`;
-      window.open(target, "_blank", "noopener,noreferrer");
-    } catch (e) {
-      // ignore
-    }
   }
 
   let progressTimer = null;
@@ -1128,12 +1038,12 @@ def index() -> str:
       else if (elapsed >= s2End) stageIdx = 2;
       else if (elapsed >= s1End) stageIdx = 1;
       const stageEnd = ends[Math.min(2, stageIdx)];
-      const stageLeft = Math.max(0, Math.ceil(stageEnd - elapsed));
-      const totalLeft = Math.max(0, Math.ceil(total - elapsed));
       const ps = el("progressStage");
       const pt = el("progressTimes");
       if (ps) ps.textContent = names[stageIdx] || "";
-      if (pt) pt.textContent = `Осталось: этап ~${stageLeft}s, всего ~${totalLeft}s`;
+      if (pt) {
+        pt.textContent = `Прошло: ${Math.floor(elapsed)}s | Итераций: ${state.totalIterations || 0} | Перезапусков промпта: ${state.promptRestarts || 0}`;
+      }
       if (elapsed >= total) stopProgress();
     }
 
@@ -1154,141 +1064,6 @@ def index() -> str:
     return await res.json();
   }
 
-  function revokeBlobUrl(u) {
-    if (!u) return;
-    try { window.URL.revokeObjectURL(u); } catch (e) {}
-  }
-
-  function buildExcelUiPayload(trafficLightsByLevel, selectedLevelOverride) {
-    return {
-      request_text: el("requestText").value.trim(),
-      selected_level: selectedLevelOverride || state.selectedLevel,
-      queries: state.queries || {},
-      queries_with_exclusions: state.queriesWithExclusions || {},
-      hh_search_urls: state.hhSearchUrls || {},
-      found_counts: state.foundCounts || {},
-      candidates_by_level: state.candidatesByLevel || {},
-      started_at: state.startedAt || null,
-      bool_finished_at: state.boolFinishedAt || null,
-      hh_finished_at: state.hhFinishedAt || null,
-      finished_at: state.finishedAt || null,
-      ran_traffic_light: Boolean(state.hasTrafficLightRun),
-      traffic_lights_by_level: trafficLightsByLevel || null,
-    };
-  }
-
-  function parseFilenameFromDisposition(cd) {
-    try {
-      const s = String(cd || "");
-      const m = s.match(/filename="([^"]+)"/i);
-      return m ? m[1] : "";
-    } catch (e) { return ""; }
-  }
-
-  async function buildExcelBlob(trafficLightsByLevel, selectedLevelOverride) {
-    const body = buildExcelUiPayload(trafficLightsByLevel, selectedLevelOverride);
-    if (!body.request_text) throw new Error("Пустой запрос");
-    const res = await fetch("/api/export_excel_ui", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const t = await res.text();
-      throw new Error(`${res.status}: ${t}`);
-    }
-    const blob = await res.blob();
-    const fn = parseFilenameFromDisposition(res.headers.get("content-disposition")) ||
-      `hh_search_${new Date().toISOString().replace(/[-:]/g,"").slice(0,15)}.xlsx`;
-    const url = window.URL.createObjectURL(blob);
-    return { url, filename: fn };
-  }
-
-  function downloadFromUrl(url, filename) {
-    if (!url) return;
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename || `hh_search_${new Date().toISOString().replace(/[-:]/g,"").slice(0,15)}.xlsx`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  }
-
-  async function ensureFullExcel() {
-    const btn = el("btnDownloadFullExcel");
-    if (btn) btn.disabled = true;
-    const tl = {};
-    ["Уровень 1","Уровень 2","Уровень 3"].forEach((lvl) => {
-      const items = state.trafficLightByLevel?.[lvl];
-      if (Array.isArray(items) && items.length) tl[lvl] = items;
-    });
-    const out = await buildExcelBlob(Object.keys(tl).length ? tl : null, null);
-    revokeBlobUrl(state.fullExcelBlobUrl);
-    state.fullExcelBlobUrl = out.url;
-    state.fullExcelFileName = out.filename;
-    if (btn) btn.disabled = false;
-    return out;
-  }
-
-  async function ensureLevelExcel(levelName) {
-    const cached = state.excelByLevel?.[levelName];
-    if (cached?.url) return cached;
-    const out = await buildExcelBlob(null, levelName);
-    const prev = state.excelByLevel?.[levelName];
-    if (prev?.url) revokeBlobUrl(prev.url);
-    state.excelByLevel[levelName] = { url: out.url, filename: out.filename };
-    return state.excelByLevel[levelName];
-  }
-
-  async function ensureTlExcel(levelName) {
-    const cached = state.tlExcelByLevel?.[levelName];
-    if (cached?.url) return cached;
-    const items = state.trafficLightByLevel?.[levelName] || [];
-    const tl = (Array.isArray(items) && items.length) ? { [levelName]: items } : null;
-    const out = await buildExcelBlob(tl, levelName);
-    const prev = state.tlExcelByLevel?.[levelName];
-    if (prev?.url) revokeBlobUrl(prev.url);
-    state.tlExcelByLevel[levelName] = { url: out.url, filename: out.filename };
-    return state.tlExcelByLevel[levelName];
-  }
-
-  async function downloadFullExcel() {
-    try {
-      if (!state.fullExcelBlobUrl) await ensureFullExcel();
-      downloadFromUrl(state.fullExcelBlobUrl, state.fullExcelFileName);
-      setStatus("Excel скачан.");
-    } catch (e) {
-      setStatus("Ошибка Excel: " + e.message);
-    }
-  }
-
-  async function downloadLevelExcel(levelName) {
-    try {
-      const out = await ensureLevelExcel(levelName);
-      downloadFromUrl(out.url, out.filename);
-      setStatus("Excel скачан.");
-    } catch (e) {
-      setStatus("Ошибка Excel: " + e.message);
-    }
-  }
-
-  async function downloadTrafficExcel(levelName) {
-    try {
-      const out = await ensureTlExcel(levelName);
-      downloadFromUrl(out.url, out.filename);
-      setStatus("Excel скачан.");
-    } catch (e) {
-      setStatus("Ошибка Excel: " + e.message);
-    }
-  }
-
-  async function downloadExcelSmart(levelName) {
-    const items = state.trafficLightByLevel?.[levelName];
-    if (Array.isArray(items) && items.length) {
-      return await downloadTrafficExcel(levelName);
-    }
-    return await downloadLevelExcel(levelName);
-  }
 
   el("btnDefault").onclick = async () => {
     setBusy(true); setStatus("Загружаю запрос по умолчанию...");
@@ -1302,30 +1077,14 @@ def index() -> str:
     } finally { setBusy(false); }
   };
 
-  el("btnOpenBot").onclick = () => {
-    try {
-      window.open("/ui/bot", "_self", "noopener,noreferrer");
-    } catch (e) {
-      // ignore
-    }
-  };
-
   el("btnBool").onclick = async () => {
     const requestText = el("requestText").value.trim();
     setBusy(true); setStatus("Получаю булевы запросы...");
     try {
       const data = await api("/api/generate_queries", {
         request_text: requestText,
-        system_prompt_override: getSystemPromptOverride(),
-        user_prompt_override: getUserPromptOverride(),
       });
-      if (data.llm_raw) {
-        el("llmRaw").textContent = JSON.stringify(data.llm_raw, null, 2);
-        el("llmBlock").style.display = "block";
-      } else {
-        el("llmBlock").style.display = "none";
-      }
-      renderQueries(data.queries, null);
+      renderQueries(data.queries, null, data.final_boolean_query, data.final_search_url);
       el("results").style.display = "none";
       el("trafficLightBlock").style.display = "none";
       const tbody = el("tlTbody");
@@ -1350,53 +1109,38 @@ def index() -> str:
     const stage3Name = "Этап 3: постобработка результатов";
     startProgress(stage1Name, stage1Sec, stage2Name, stage2Sec, stage3Name, stage3Sec, totalSec);
     try {
+      state.totalIterations = 0;
+      state.promptRestarts = 0;
       const data = await api("/api/search", {
         request_text: requestText,
-        selected_level: state.selectedLevel,
         candidates_limit: getCandidatesLimit(),
-        min_stay_months: getMinStayMonths(),
-        allowed_short_jobs: getAllowedShortJobs(),
-        jump_mode: getJumpMode(),
-        max_not_employed_months: getMaxNotEmployedMonths(),
-        svetofor_top_x: getSvetoforTopX(),
-        system_prompt_override: getSystemPromptOverride(),
-        user_prompt_override: getUserPromptOverride(),
       });
-      if (data.llm_raw) {
-        el("llmRaw").textContent = JSON.stringify(data.llm_raw, null, 2);
-        el("llmBlock").style.display = "block";
-      } else {
-        el("llmBlock").style.display = "none";
-      }
-      renderQueries(data.queries, data.hh_search_urls);
-      state.candidatesByLevel = data.candidates_by_level;
-      state.foundCounts = data.found_counts;
+      renderQueries(data.queries, data.hh_search_urls, data.final_boolean_query, data.final_search_url);
+      const candidates = Array.isArray(data.candidates) ? data.candidates : [];
+      state.candidates = candidates;
+      state.foundCount = Number(data.found_count || 0);
       state.queries = data.queries;
       state.queriesWithExclusions = data.queries_with_exclusions;
       state.hhSearchUrls = data.hh_search_urls;
-      state.selectedLevel = pickDefaultLevelByCounts(state.foundCounts, 20);
-      state.hasTrafficLightRun = false;
       state.startedAt = data.started_at || null;
       state.boolFinishedAt = data.bool_finished_at || null;
       state.hhFinishedAt = data.hh_finished_at || null;
       state.finishedAt = data.finished_at || null;
-      // reset traffic lights + excel caches
-      state.trafficLightByLevel = {};
-      state.activeTrafficLevel = null;
-      Object.keys(state.excelByLevel || {}).forEach((k) => revokeBlobUrl(state.excelByLevel[k]?.url));
-      Object.keys(state.tlExcelByLevel || {}).forEach((k) => revokeBlobUrl(state.tlExcelByLevel[k]?.url));
-      state.excelByLevel = {};
-      state.tlExcelByLevel = {};
-      revokeBlobUrl(state.fullExcelBlobUrl);
-      state.fullExcelBlobUrl = null;
-      state.fullExcelFileName = "";
+      state.finalBooleanQuery = data.final_boolean_query || "";
+      state.stageAttempts = data.stage_attempts || [];
+      state.totalIterations = Number(data.total_iterations || 0);
+      state.promptRestarts = Number(data.prompt_restarts || 0);
+      // reset traffic lights
+      state.screeningById = {};
 
       el("results").style.display = "block";
-      const levels = ["Уровень 1", "Уровень 2", "Уровень 3"];
-      const totalShown = levels.reduce((acc, lvl) => acc + ((state.candidatesByLevel?.[lvl] || []).length), 0);
-      el("pickedInfo").textContent = `Показано кандидатов (всего по 3 уровням): ${totalShown}.`;
-      renderLevelTabs(state.foundCounts);
-      renderActiveLevelTable(state.foundCounts);
+      const totalShown = candidates.length;
+      const minN = getCandidatesLimit();
+      el("pickedInfo").textContent = `Минимум: ${minN}. Показано кандидатов: ${totalShown} (макс: ${Math.min(200, minN * 3)}).`;
+      const tabs = el("levelTabs");
+      if (tabs) tabs.style.display = "none";
+      renderActiveLevelTable();
+      renderFinalQueryInfo();
 
       const tlBlock = el("trafficLightBlock");
       if (tlBlock) tlBlock.style.display = "none";
@@ -1404,17 +1148,7 @@ def index() -> str:
       if (tlT) tlT.innerHTML = "";
       const tlTabs = el("trafficLightTabs");
       if (tlTabs) tlTabs.innerHTML = "";
-      const tlBtn = el("btnDownloadTlExcel");
-      if (tlBtn) tlBtn.disabled = true;
-
-      // Автосборка полного Excel
-      try {
-        setStatus("Поиск завершён. Собираю полный Excel...");
-        await ensureFullExcel();
-        setStatus("Готово.");
-      } catch (e) {
-        setStatus("Поиск завершён, но полный Excel не собран: " + e.message);
-      }
+      setStatus("Готово.");
 
       stopProgress();
       el("progressStage").textContent = "";
@@ -1427,123 +1161,9 @@ def index() -> str:
     } finally { setBusy(false); }
   };
 
-  async function runSvetoforForLevel(levelName) {
-    const requestText = el("requestText").value.trim();
-    const topX = getSvetoforTopX();
+  // btnSvetofor removed by task.
 
-    // If already computed for this level - just show via TL tabs (no повторного запуска).
-    const existing = state.trafficLightByLevel?.[levelName];
-    if (existing && Array.isArray(existing) && existing.length) {
-      state.activeTrafficLevel = levelName;
-      const tlBlock = el("trafficLightBlock");
-      if (tlBlock) tlBlock.style.display = "block";
-      renderTrafficLightTabs();
-      renderTrafficLightTable(existing);
-      const tlBtn = el("btnDownloadTlExcel");
-      if (tlBtn) tlBtn.disabled = false;
-      state.selectedLevel = levelName;
-      state.trafficLightCandidates = [...existing];
-      state.hasTrafficLightRun = true;
-      return;
-    }
-
-    setBusy(true);
-    setStatus(`Светофор (${levelName})`);
-    try {
-      // Оценка тайминга только для светофора (без поиска).
-      const stage1Sec = 8;
-      const stage2Sec = Math.max(10, Math.ceil(topX / 5) * 8);
-      const totalSec = stage1Sec + stage2Sec;
-      startProgress("Этап 1: подготовка кандидатов", stage1Sec, `Этап 2: светофор (x${topX})`, stage2Sec, "", 0, totalSec);
-
-      const candidates = (state.candidatesByLevel?.[levelName] || []);
-      const data = await api("/api/traffic_light", {
-        request_text: requestText,
-        selected_level: levelName,
-        candidates: candidates,
-        min_stay_months: getMinStayMonths(),
-        allowed_short_jobs: getAllowedShortJobs(),
-        jump_mode: getJumpMode(),
-        max_not_employed_months: getMaxNotEmployedMonths(),
-        svetofor_top_x: topX,
-      });
-
-      const tlItems = data.traffic_light_candidates || [];
-      state.trafficLightByLevel[levelName] = tlItems;
-      state.selectedLevel = levelName;
-      state.hasTrafficLightRun = true;
-      // Сохраняем отметку завершения светофора для корректных таймингов в Excel UI-экспорте.
-      state.finishedAt = (new Date()).toISOString();
-      state.trafficLightCandidates = [...tlItems];
-      // invalidate excel caches
-      const prevTl = state.tlExcelByLevel?.[levelName];
-      if (prevTl?.url) revokeBlobUrl(prevTl.url);
-      state.tlExcelByLevel[levelName] = null;
-      revokeBlobUrl(state.fullExcelBlobUrl);
-      state.fullExcelBlobUrl = null;
-      state.fullExcelFileName = "";
-
-      // show TL section
-      state.activeTrafficLevel = levelName;
-      const tlBlock = el("trafficLightBlock");
-      if (tlBlock) tlBlock.style.display = "block";
-      renderTrafficLightTabs();
-      renderTrafficLightTable(tlItems);
-      const tlBtn = el("btnDownloadTlExcel");
-      if (tlBtn) tlBtn.disabled = false;
-
-      // автосборка excel
-      try {
-        setStatus("Светофор готов. Собираю Excel...");
-        await ensureTlExcel(levelName);
-        await ensureFullExcel();
-        setStatus("Готово.");
-      } catch (e) {
-        setStatus("Светофор завершён, но Excel не собран: " + e.message);
-      }
-      stopProgress();
-      el("progressStage").textContent = "";
-      el("progressTimes").textContent = "";
-    } catch (e) {
-      stopProgress();
-      el("progressStage").textContent = "";
-      el("progressTimes").textContent = "";
-      setStatus("Ошибка: " + e.message);
-    } finally { setBusy(false); }
-  }
-
-  el("showPrompt").addEventListener("change", async (e) => {
-    const visible = Boolean(e?.target?.checked);
-    el("promptBlock").style.display = visible ? "block" : "none";
-    if (!visible || state.systemPromptLoaded) return;
-    try {
-      if (!state.systemPromptLoaded) {
-        const systemRes = await fetch("/api/system_prompt");
-        const systemTxt = await systemRes.text();
-        el("systemPromptText").value = systemTxt;
-        state.systemPromptLoaded = true;
-      }
-      if (!state.userPromptLoaded) {
-        const userRes = await fetch("/api/user_prompt");
-        const userTxt = await userRes.text();
-        el("userPromptText").value = userTxt;
-        state.userPromptLoaded = true;
-      }
-    } catch (err) {
-      setStatus("Не удалось загрузить prompt файлы");
-    }
-  });
-
-  const fullBtn = el("btnDownloadFullExcel");
-  if (fullBtn) fullBtn.onclick = () => downloadFullExcel();
-
-  const tlBtn = el("btnDownloadTlExcel");
-  if (tlBtn) {
-    tlBtn.onclick = () => {
-      const lvl = state.activeTrafficLevel || state.selectedLevel || "Уровень 2";
-      downloadTrafficExcel(lvl);
-    };
-  }
+  // legacy /api/svetofor removed
 
 </script>
 </body>

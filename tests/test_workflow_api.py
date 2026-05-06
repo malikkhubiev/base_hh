@@ -1,146 +1,224 @@
-from __future__ import annotations
-
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime
 
 from fastapi.testclient import TestClient
 
-
-def _override_body():
-    return {
-        "request_text": "Python",
-        "queries_override": {
-            "Уровень 1": "q1",
-            "Уровень 2": "q2",
-            "Уровень 3": "q3",
-        },
-    }
+from app.main import app
 
 
-def test_api_default_request(client: TestClient) -> None:
-    r = client.get("/api/default_request")
-    assert r.status_code == 200
-    assert len(r.text) > 0
+def test_prompt_endpoints(monkeypatch):
+    from app.api.routes import workflow
+
+    monkeypatch.setattr(workflow.PromptService, "get_default_request_text", lambda self: "REQ")
+    monkeypatch.setattr(workflow.PromptService, "get_system_prompt_text", lambda self: "SYS")
+    monkeypatch.setattr(workflow.PromptService, "get_user_prompt_text", lambda self: "USR")
+    client = TestClient(app)
+
+    assert client.get("/api/default_request").text == "REQ"
+    assert client.get("/api/system_prompt").text == "SYS"
+    assert client.get("/api/user_prompt").text == "USR"
 
 
-def test_api_generate_queries_override(client: TestClient) -> None:
-    r = client.post(
+def test_generate_queries_with_override_skips_llm():
+    client = TestClient(app)
+    res = client.post(
         "/api/generate_queries",
-        json={
-            "request_text": "",
-            "queries_override": {"Уровень 1": "a", "Уровень 2": "b", "Уровень 3": "c"},
-        },
+        json={"request_text": "", "queries_override": {"Основной": "(python)"}},
     )
-    assert r.status_code == 200
-    data = r.json()
-    assert data["llm_raw"] is None
-    assert data["queries"]["Уровень 2"] == "b"
+    assert res.status_code == 200
+    body = res.json()
+    assert body["queries"]["Основной"] == "(python)"
+    assert body["llm_raw"] is None
 
 
-@patch("app.api.routes.workflow.HHSearchService")
-def test_api_search_mocked(mock_hh_cls, client: TestClient) -> None:
-    inst = MagicMock()
-    mock_hh_cls.return_value = inst
-    inst.search_counts_and_candidates.return_value = (
-        {"Уровень 1": 0, "Уровень 2": 2, "Уровень 3": 0},
-        {
-            "Уровень 1": [],
-            "Уровень 2": [{"id": "1", "title": "Dev", "skills": [], "tags": []}],
-            "Уровень 3": [],
-        },
-        {"Уровень 1": "x", "Уровень 2": "y", "Уровень 3": "z"},
-        {"Уровень 1": "u1", "Уровень 2": "u2", "Уровень 3": "u3"},
+def test_search_endpoint_and_no_professional_roles(monkeypatch):
+    from app.api.routes import workflow
+
+    def fake_search(self, queries, *, search_plan, search_plan_meta, source_text, area_id, per_page, **kwargs):
+        assert "professional_roles" not in queries
+        return (
+            {"Основной": 1},
+            {"Основной": [{"id": "1", "title": "Python Dev", "skills": [], "tags": []}]},
+            {"Основной": "(python)"},
+            {"Основной": "https://hh.example/search"},
+            "(python)",
+            [
+                {
+                    "stage": "Этап 1",
+                    "query": "(python)",
+                    "query_with_exclusion": "(python)",
+                    "found": 1,
+                    "collected": 1,
+                    "target": per_page,
+                    "enough": True,
+                    "web_url": "https://hh.example/search",
+                }
+            ],
+        )
+
+    monkeypatch.setattr(workflow.HHSearchService, "search_counts_and_candidates", fake_search)
+    monkeypatch.setattr(
+        workflow,
+        "_run_query_generation",
+        lambda **kwargs: (
+            {"Основной": "(python)"},
+            {"raw": "ok"},
+            [("Этап 1", "(python)")],
+            [{"stage": "Этап 1", "query": "(python)"}],
+            datetime.utcnow(),
+            datetime.utcnow(),
+        ),
     )
-    r = client.post("/api/search", json=_override_body())
-    assert r.status_code == 200
-    data = r.json()
-    assert data["found_counts"]["Уровень 2"] == 2
-    assert data["candidates_by_level"]["Уровень 2"][0]["id"] == "1"
-
-
-@patch("app.api.routes.workflow._collect_traffic_light_candidates", new_callable=AsyncMock)
-@patch("app.api.routes.workflow.HHSearchService")
-def test_api_svetofor_mocked(mock_hh_cls, mock_tl, client: TestClient) -> None:
-    inst = MagicMock()
-    mock_hh_cls.return_value = inst
-    inst.search_counts_and_candidates.return_value = (
-        {"Уровень 1": 0, "Уровень 2": 1, "Уровень 3": 0},
-        {
-            "Уровень 1": [],
-            "Уровень 2": [{"id": "1", "title": "T", "first_name": "A", "last_name": "B", "skills": [], "tags": []}],
-            "Уровень 3": [],
-        },
-        {"Уровень 1": "a", "Уровень 2": "b", "Уровень 3": "c"},
-        {"Уровень 1": "u1", "Уровень 2": "u2", "Уровень 3": "u3"},
+    client = TestClient(app)
+    res = client.post(
+        "/api/search",
+        json={"request_text": "Python", "candidates_limit": 20},
     )
-    mock_tl.return_value = []
+    assert res.status_code == 200
+    body = res.json()
+    assert body["final_boolean_query"] == "(python)"
+    assert body["found_count"] == 1
+    assert body["candidates"][0]["id"] == "1"
 
-    r = client.post("/api/svetofor", json=_override_body())
-    assert r.status_code == 200
-    assert r.json()["traffic_light_candidates"] == []
 
+def test_traffic_light_endpoint(monkeypatch):
+    from app.api.routes import workflow
+    from app.models.schemas import TrafficLightCandidate
 
-@patch("app.api.routes.workflow._collect_traffic_light_candidates", new_callable=AsyncMock)
-@patch("app.api.routes.workflow.HHSearchService")
-def test_api_traffic_light_from_candidates_mocked(mock_hh_cls, mock_tl, client: TestClient) -> None:
-    inst = MagicMock()
-    mock_hh_cls.return_value = inst
-    mock_tl.return_value = []
+    async def fake_collect(hh, payload, candidates_for_tl, **kwargs):
+        return [
+            TrafficLightCandidate(
+                id="1",
+                candidate_name="Иванов Иван",
+                title="Python Dev",
+                location="Томск",
+                resume_url="https://hh.ru/resume/1",
+                color_score_percent=90,
+                requirements=[],
+            )
+        ]
 
-    r = client.post(
+    monkeypatch.setattr(workflow, "_collect_traffic_light_candidates", fake_collect)
+    client = TestClient(app)
+    res = client.post(
         "/api/traffic_light",
         json={
             "request_text": "Python",
-            "selected_level": "Уровень 2",
-            "svetofor_top_x": 3,
-            "candidates": [
-                {"id": "1", "title": "Dev", "first_name": "A", "last_name": "B", "skills": [], "tags": []},
-                {"id": "2", "title": "Dev2", "first_name": "C", "last_name": "D", "skills": [], "tags": []},
-            ],
+            "candidates": [{"id": "1", "title": "Python Dev"}, {"id": "2", "title": "Backend Dev"}],
         },
     )
-    assert r.status_code == 200
-    data = r.json()
-    assert data["selected_level"] == "Уровень 2"
-    assert data["traffic_light_candidates"] == []
+    assert res.status_code == 200
+    body = res.json()
+    assert body["traffic_light_candidates"][0]["color_score_percent"] == 90
+    assert len(body["traffic_light_candidates"]) == 2
+    assert body["traffic_light_candidates"][1]["id"] == "2"
+    assert body["traffic_light_candidates"][1]["color_score_percent"] == 0
 
 
-@patch("app.api.routes.workflow.HHSearchService")
-def test_api_export_excel_mocked(mock_hh_cls, client: TestClient) -> None:
-    inst = MagicMock()
-    mock_hh_cls.return_value = inst
-    inst.search_counts_and_candidates.return_value = (
-        {"Уровень 1": 0, "Уровень 2": 1, "Уровень 3": 0},
-        {"Уровень 1": [], "Уровень 2": [{"id": "1"}], "Уровень 3": []},
-        {"Уровень 1": "a", "Уровень 2": "b", "Уровень 3": "c"},
-        {"Уровень 1": "u1", "Уровень 2": "u2", "Уровень 3": "u3"},
+def test_svetofor_keeps_only_scored_candidates(monkeypatch):
+    from app.api.routes import workflow
+    from app.models.schemas import TrafficLightCandidate
+
+    def fake_run_search_with_restarts(*, payload, request_text, area_id):
+        assert payload.candidates_limit == 20
+        now = datetime.utcnow()
+        return (
+            {"Основной": "(python)"},
+            {"raw": "ok"},
+            {"Основной": 2},
+            {
+                "Основной": [
+                    {"id": "1", "title": "Python Dev", "skills": [], "tags": []},
+                    {"id": "2", "title": "Backend Dev", "skills": [], "tags": []},
+                ]
+            },
+            {"Основной": "(python)"},
+            {"Основной": "https://hh.example/search"},
+            "(python)",
+            [{"block": "Обязательно", "expression": "(python)"}],
+            [],
+            now,
+            now,
+            now,
+            1,
+            0,
+        )
+
+    async def fake_collect(hh, payload, candidates_for_tl, **kwargs):
+        return [
+            TrafficLightCandidate(
+                id="1",
+                candidate_name="Иванов Иван",
+                title="Python Dev",
+                location="Томск",
+                resume_url="https://hh.ru/resume/1",
+                color_score_percent=90,
+                requirements=[],
+            )
+        ]
+
+    monkeypatch.setattr(workflow, "_run_search_with_restarts", fake_run_search_with_restarts)
+    monkeypatch.setattr(workflow, "_collect_traffic_light_candidates", fake_collect)
+
+    client = TestClient(app)
+    res = client.post(
+        "/api/svetofor",
+        json={
+            "request_text": "Python",
+            "candidates_limit": 20,
+            "svetofor_top_x": 20,
+        },
     )
-    r = client.post("/api/export_excel", json=_override_body())
-    assert r.status_code == 200
-    assert r.headers.get("content-type", "").startswith("application/vnd.openxmlformats")
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["traffic_light_candidates"]) == 1
+    assert body["traffic_light_candidates"][0]["id"] == "1"
+    assert len(body["candidates"]) == 1
+    assert body["candidates"][0]["id"] == "1"
 
 
-@patch("app.api.routes.workflow.build_search_excel_bytes")
-def test_api_export_excel_ui_passes_stage_timing_markers(mock_build_excel, client: TestClient) -> None:
-    mock_build_excel.return_value = (b"PK\x03\x04", "hh_search_20260405_120000.xlsx")
-    body = {
-        "request_text": "Python",
-        "selected_level": "Уровень 2",
-        "queries": {"Уровень 1": "q1", "Уровень 2": "q2", "Уровень 3": "q3"},
-        "queries_with_exclusions": {"Уровень 1": "q1", "Уровень 2": "q2", "Уровень 3": "q3"},
-        "hh_search_urls": {"Уровень 2": "https://example.com"},
-        "found_counts": {"Уровень 1": 0, "Уровень 2": 1, "Уровень 3": 0},
-        "candidates_by_level": {"Уровень 2": [{"id": "1", "title": "Dev"}]},
-        "started_at": "2026-04-05T12:00:00",
-        "bool_finished_at": "2026-04-05T12:00:02",
-        "hh_finished_at": "2026-04-05T12:00:05",
-        "finished_at": "2026-04-05T12:00:05",
-        "ran_traffic_light": False,
-    }
-    r = client.post("/api/export_excel_ui", json=body)
-    assert r.status_code == 200
-    assert r.content.startswith(b"PK")
-    kwargs = mock_build_excel.call_args.kwargs
-    assert kwargs["started_at"].isoformat() == "2026-04-05T12:00:00"
-    assert kwargs["bool_finished_at"].isoformat() == "2026-04-05T12:00:02"
-    assert kwargs["hh_finished_at"].isoformat() == "2026-04-05T12:00:05"
-    assert kwargs["finished_at"].isoformat() == "2026-04-05T12:00:05"
+def test_search_uses_best_result_when_iteration_limit_reached(monkeypatch):
+    from app.api.routes import workflow
+
+    call_no = {"n": 0}
+
+    def fake_search(self, queries, *, search_plan, search_plan_meta, source_text, area_id, per_page, **kwargs):
+        call_no["n"] += 1
+        if call_no["n"] == 1:
+            count = 10
+        elif call_no["n"] == 2:
+            count = 15
+        else:
+            count = 12
+        stage_attempts = [{"stage": f"Этап {i}", "query": "(python)", "query_with_exclusion": "(python)", "found": count, "collected": count, "target": per_page, "enough": count >= per_page, "web_url": "https://hh.example/search"} for i in range(40)]
+        return (
+            {"Основной": count},
+            {"Основной": [{"id": str(i), "title": "Python Dev", "skills": [], "tags": []} for i in range(1, count + 1)]},
+            {"Основной": "(python)"},
+            {"Основной": "https://hh.example/search"},
+            "(python)",
+            stage_attempts,
+        )
+
+    monkeypatch.setattr(workflow.HHSearchService, "search_counts_and_candidates", fake_search)
+    monkeypatch.setattr(
+        workflow,
+        "_run_query_generation",
+        lambda **kwargs: (
+            {"Основной": "(python)"},
+            {"raw": "ok"},
+            [("Этап 1", "(python)")],
+            [{"stage": "Этап 1", "query": "(python)"}],
+            datetime.utcnow(),
+            datetime.utcnow(),
+        ),
+    )
+    client = TestClient(app)
+    res = client.post(
+        "/api/search",
+        json={"request_text": "Python", "candidates_limit": 20},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["candidates"]) == 15
+    assert body["found_count"] == 15
+    assert body["total_iterations"] == 100

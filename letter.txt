@@ -1,0 +1,105 @@
+## API поиска — вход/выход и параметры
+
+Файл описывает фактические входные/выходные данные API поиска в этом проекте.
+
+### Базовый URL
+
+- UI: `GET /` (встроенная HTML-страница)
+- API префикс: `/api`
+
+### 1) `POST /api/search` — поиск кандидатов HH
+
+**Назначение**: генерирует булевы запросы (через LLM или через `queries_override`), делает поиск в HH, возвращает кандидатов и вспомогательную отладочную информацию.
+
+#### Вход (JSON)
+
+- **request_text** (`string`, optional): текст вакансии/требований. Если пусто, сервер подставит дефолтный текст.
+- **candidates_limit** (`int`, optional, 1..200, default 20): минимум кандидатов, который пытаемся набрать.
+- **area_id** (`int`, optional): регион HH (если не передан, берётся из `AREA_ID`/настроек).
+- **system_prompt_override** (`string`, optional): переопределение системного промпта для LLM.
+- **user_prompt_override** (`string`, optional): переопределение user prompt для LLM.
+- **queries_override** (`object`, optional): если передано — шаг LLM пропускается, сервер использует готовые булевы запросы.
+  - ключи: `"Основной"`
+  - значения: строка bool-запроса
+
+#### Выход (JSON)
+
+- **llm_raw** (`any | null`): raw/debug от LLM (если LLM вызывался).
+- **queries** (`object`): булевы запросы по уровням.
+- **queries_with_exclusions** (`object`): запросы с исключениями (если применялись в планах ослабления).
+- **hh_search_urls** (`object`): ссылки на web-поиск HH с теми же параметрами.
+- **found_count** (`int`): сколько найдено в HH (для основного запроса).
+- **candidates** (`array[Candidate]`): кандидаты (до `candidates_limit*3`).
+- **final_boolean_query** (`string | null`): итоговый булевый запрос.
+- **final_search_url** (`string | null`): итоговая ссылка на поиск в HH.
+- **stage_attempts** (`array`): попытки/этапы ослабления (итерации).
+- **total_iterations** (`int`): всего итераций планировщика/ослабления.
+- **prompt_restarts** (`int`): сколько раз перезапускали генерацию запросов.
+- **started_at / bool_finished_at / hh_finished_at / finished_at** (`datetime | null`): тайминги этапов.
+#### Candidate (внутри `candidates`)
+
+Поля (возможны `null`):
+
+- **id**, **title**, **url**, **alternate_url**
+- **created_at**, **updated_at**
+- **age**
+- **area** (как пришло из HH)
+- **employer** (как пришло из HH)
+- **salary** (как пришло из HH)
+- **experience** (компактный объект из HH search: обычно `total_months` + `text`)
+- **skills** (list)
+- **tags** (list)
+- **first_name**, **last_name**
+
+### 2) `POST /api/screening` — скрининг выбранных кандидатов
+
+**Назначение**: для переданных кандидатов догружает резюме по `id` (HH API), собирает проектный опыт и запускает:
+
+- светофор (ColorScore)
+- “общие требования” (отдельный промпт)
+
+#### Вход (JSON)
+
+- **request_text** (`string`, required)
+- **general_requirements_text** (`string`, optional, default `""`)
+- **candidates** (`array[Candidate]`, required): выбранные кандидаты из таблицы поиска
+
+#### Выход (JSON)
+
+- **traffic_light_candidates** (`array[TrafficLightCandidate]`)
+- **general_requirements** (`array`): результаты по “общим требованиям”
+
+### 3) `POST /api/traffic_light` — светофор по готовым кандидатам (без поиска)
+
+**Назначение**: UI передаёт кандидатов, сервер догружает резюме по `id` и считает ColorScore.
+
+#### Вход (JSON)
+
+- **request_text** (`string`, required)
+- **candidates** (`array[Candidate]`, optional)
+
+#### Выход (JSON)
+
+- **traffic_light_candidates** (`array[TrafficLightCandidate]`)
+
+### TrafficLightCandidate (в ответах светофора/скрининга)
+
+- **id** (`string`)
+- **candidate_name** (`string`)
+- **title** (`string | null`)
+- **location** (`string | null`)
+- **resume_url** (`string | null`)
+- **color_score_percent** (`int 0..100`)
+- **requirements** (`array[TrafficLightRequirement]`)
+- **candidate_prj_exp** (`string | null`): проектный опыт (для промпта)
+- **experience_full** (`array<object> | null`): полный список опыта из резюме HH (таблично показывается в UI)
+- **debug_prompt** (`string | null`)
+- **debug_llm_raw** (`any | null`)
+
+### Параметры окружения (важные)
+
+- **DATABASE_URL**: Postgres DSN (обязателен; sqlite удалён)
+- **AREA_ID**: дефолтный `area_id` (например `113`)
+- **LLM_URL**, **LLM_TOKEN_PARAM**
+- **HH_TOKEN_URL**
+

@@ -8,6 +8,7 @@ from typing import Any
 
 import requests
 from app.core.log_store import LogStore, get_log_store
+from app.core.resume_store import ResumeStore, get_resume_store
 from app.core.tracing import trace_step
 
 logger = logging.getLogger(__name__)
@@ -21,12 +22,14 @@ class HHClient:
         token_url: str = "http://int-srv:8085/metrics/hh/accessToken",
         token_source: str = "ssp",
         log_store: LogStore | None = None,
+        resume_store: ResumeStore | None = None,
     ) -> None:
         self.token_url = token_url
         self.token: str | None = None
         self.base_url = "https://api.hh.ru/resumes"
         self.token_source = token_source
         self.log_store = log_store or get_log_store()
+        self.resume_store = resume_store or get_resume_store()
 
     def get_token(self) -> str:
         """Получаем API-токен HH из SSP-эндпоинта."""
@@ -52,9 +55,6 @@ class HHClient:
         title = f.get("title")
         if title:
             params["title"] = title
-        professional_roles = f.get("professional_roles")
-        if professional_roles:
-            params["professional_role"] = professional_roles
         return params
 
     def _api_to_url_params(self, api_params: dict[str, Any]) -> dict[str, Any]:
@@ -85,14 +85,12 @@ class HHClient:
             "pos": "full_text",
             "logic": "normal",
             "exp_period": "all_time",
-            "professional_role": f.get("professional_roles") or [],
             "ored_clusters": "true",
             "order_by": "relevance",
             "search_period": f.get("period", ["0"]),
             "age_to": f.get("age_to", ["45"]),
             "job_search_status": f.get("job_search_status", ["unknown", "active_search", "looking_for_offers"]),
             "experience": f.get("experience", ["between3And6", "moreThan6"]),
-            "items_on_page": str(per_page),
             "hhtmFrom": "resume_search_result",
             "hhtmFromLabel": "resume_search_line",
         }
@@ -107,11 +105,15 @@ class HHClient:
 
             experience_obj = item.get("experience")
             compact_experience: dict[str, Any] | None = None
+            experience_full: list[dict[str, Any]] | None = None
             if isinstance(experience_obj, dict):
                 compact_experience = {
                     "months": experience_obj.get("total_months"),
                     "text": experience_obj.get("text"),
                 }
+            elif isinstance(experience_obj, list):
+                # If HH search already includes full experience list, pass it through.
+                experience_full = [x for x in experience_obj if isinstance(x, dict)]
 
             compact.append(
                 {
@@ -123,6 +125,7 @@ class HHClient:
                     "updated_at": item.get("updated_at"),
                     "age": item.get("age"),
                     "experience": compact_experience if compact_experience is not None else None,
+                    "experience_full": experience_full,
                     "salary": item.get("salary"),
                     "gender": item.get("gender"),
                     "citizenship": item.get("citizenship"),
@@ -195,8 +198,9 @@ class HHClient:
 
             found_count = int(raw_response.get("found", 0) or 0)
             items_list = raw_response.get("items", [])
+            print(items_list)
             compact_items = self._compact_items(items_list)
-
+            print(compact_items)
             # Persist in DB instead of writing JSON files.
             try:
                 self.log_store.save_hh_search_run(
@@ -229,11 +233,25 @@ class HHClient:
         trace_step(logger, "hh_client", "get_resume_by_id.enter", resume_id=resume_id)
         if not self.token:
             self.get_token()
+        # Resume cache: if we already fetched this resume, return cached JSON.
+        try:
+            cached = self.resume_store.get_resume_json(resume_id=str(resume_id))
+        except Exception:
+            cached = None
+        if isinstance(cached, dict) and cached:
+            trace_step(logger, "hh_client", "get_resume_by_id.cache_hit", resume_id=resume_id)
+            return cached
         headers = {"Authorization": f"Bearer {self.token}"}
         try:
             response = requests.get(f"{self.base_url}/{resume_id}", headers=headers, timeout=30)
             if response.status_code == 200:
                 data = response.json()
+                try:
+                    if isinstance(data, dict) and data:
+                        self.resume_store.save_resume_json(resume_id=str(resume_id), resume_json=data)
+                except Exception:
+                    # Cache must never break core path.
+                    logger.exception("Failed to cache resume id=%s", resume_id)
                 trace_step(
                     logger,
                     "hh_client",
