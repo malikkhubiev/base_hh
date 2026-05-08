@@ -32,7 +32,7 @@ class QueryGenerator:
             out.append(s)
         return "\n".join(out)
 
-    """Генерирует булевы запросы трех уровней через LLM."""
+    """Генерирует один итоговый булевый запрос через LLM."""
 
     def __init__(self, llm_url: str, llm_token_param: str, txt_folder: str = "txt", output_folder: str = "logs"):
         self.fm = FileManager(txt_folder=txt_folder, output_folder=output_folder)
@@ -45,60 +45,52 @@ class QueryGenerator:
         self,
         request_text: str,
         *,
-        system_prompt_override: str | None = None,
-        user_prompt_override: str | None = None,
+        prompt_override: str | None = None,
     ) -> str:
-        user_template = user_prompt_override if user_prompt_override is not None else self.user_prompt_template
-        user_prompt = user_template.format(vac_reqs=request_text)
-        system_prompt = system_prompt_override if system_prompt_override is not None else self.system_prompt
-        return f"{system_prompt}\n\n{user_prompt}"
+        template = prompt_override if prompt_override is not None else f"{self.system_prompt}\n\n{self.user_prompt_template}"
+        return template.format(vac_reqs=request_text).strip()
 
     def generate(
         self,
         request_text: str,
         *,
-        system_prompt_override: str | None = None,
-        user_prompt_override: str | None = None,
-    ) -> tuple[dict[str, str], Any | None]:
+        prompt_override: str | None = None,
+    ) -> tuple[str, Any | None]:
         trace_step(
             logger,
             "query_generator",
             "generate.start",
             request_preview=(request_text or "")[:400],
-            has_system_override=system_prompt_override is not None,
-            has_user_override=user_prompt_override is not None,
+            has_prompt_override=prompt_override is not None,
         )
         prepared_for_json = self._prepare_for_json(request_text)
         normalized_for_llm = self._normalize_lines(prepared_for_json)
         prompt = self._build_prompt(
             normalized_for_llm,
-            system_prompt_override=system_prompt_override,
-            user_prompt_override=user_prompt_override,
+            prompt_override=prompt_override,
         )
         llm_raw = self.llm.call(prompt_text=prompt, iteration=0)
-        empty = {"Уровень 1": "", "Уровень 2": "", "Уровень 3": ""}
         if not llm_raw:
             trace_step(logger, "query_generator", "generate.empty_llm_response")
-            return empty, None
+            return "", None
 
         queries = self.llm.extract_queries(llm_raw)
         if not queries:
             trace_step(logger, "query_generator", "generate.extract_queries_failed", llm_keys=list(llm_raw.keys()) if isinstance(llm_raw, dict) else None)
-            return empty, llm_raw
+            return "", llm_raw
 
-        # Нормализация: гарантируем наличие всех трех уровней.
-        for k in ["Уровень 1", "Уровень 2", "Уровень 3"]:
-            if k not in queries:
-                queries[k] = ""
-
-        # Приводим значения к строкам для стабильного контракта API.
-        safe: dict[str, str] = {}
-        for k, v in queries.items():
-            safe[k] = v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
-
-        for k in ["Уровень 1", "Уровень 2", "Уровень 3"]:
-            safe.setdefault(k, "")
-
-        trace_step(logger, "query_generator", "generate.ok", levels={k: len(v or "") for k, v in safe.items()})
-        return safe, llm_raw
+        # Берём любой непустой запрос (модель LLMClient может возвращать разные форматы).
+        picked = ""
+        if isinstance(queries, dict):
+            for v in queries.values():
+                if isinstance(v, str) and v.strip():
+                    picked = v.strip()
+                    break
+                if v is not None:
+                    picked = json.dumps(v, ensure_ascii=False)
+                    break
+        elif isinstance(queries, str):
+            picked = queries.strip()
+        trace_step(logger, "query_generator", "generate.ok", query_len=len(picked or ""))
+        return picked, llm_raw
 

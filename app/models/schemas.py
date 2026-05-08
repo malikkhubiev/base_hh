@@ -6,32 +6,23 @@ from typing import Any, Mapping, Self
 from pydantic import BaseModel, Field, model_validator
 
 
-def normalize_level_queries(override: Mapping[str, str] | None) -> dict[str, str]:
-    """Совместимость: приводим override к словарю запросов (ключ 'Основной')."""
-    base: dict[str, str] = {"Основной": ""}
-    if not override:
-        return base
-    for k in base:
-        if k in override and override[k] is not None:
-            base[k] = str(override[k])
-    return base
-
-
 class GenerateQueriesRequest(BaseModel):
     request_text: str = Field(
         default="",
         description="Текст требований для LLM; при передаче queries_override может быть пустым.",
     )
-    system_prompt_override: str | None = None
-    user_prompt_override: str | None = None
-    queries_override: dict[str, str] | None = Field(
+    prompt_override: str | None = Field(
         None,
-        description="Если задано, LLM не вызывается; возвращаются эти булевы запросы (без генерации).",
+        description="Если задано, используем этот текст промпта вместо system+user шаблонов. Можно использовать {vac_reqs}.",
+    )
+    query_override: str | None = Field(
+        None,
+        description="Если задано, LLM не вызывается; возвращается этот булевый запрос (без генерации).",
     )
 
 class GenerateQueriesResponse(BaseModel):
     llm_raw: Any | None = None
-    queries: dict[str, str]
+    query: str = ""
 
 
 class Candidate(BaseModel):
@@ -80,22 +71,19 @@ class SearchRequest(BaseModel):
     candidates_limit: int = Field(20, ge=1, le=200, description="Минимум кандидатов: ищем до тех пор, пока не соберём минимум (в UI показываем до N*3)")
 
     area_id: int | None = None
-    system_prompt_override: str | None = None
-    user_prompt_override: str | None = None
-    queries_override: dict[str, str] | None = Field(
+    prompt_override: str | None = Field(
         None,
-        description="Готовые булевы запросы по уровням; если задано, шаг генерации через LLM пропускается.",
+        description="Если задано, используем этот текст промпта вместо system+user шаблонов. Можно использовать {vac_reqs}.",
+    )
+    query_override: str | None = Field(
+        None,
+        description="Готовый булевый запрос; если задано, шаг генерации через LLM пропускается.",
     )
 
     # NOTE: job_stability and svetofor_top_x are removed per task.txt.
 class SearchResponse(BaseModel):
     llm_raw: Any | None = None
-    queries: dict[str, str]
-    queries_with_exclusions: dict[str, str]
-    hh_search_urls: dict[str, str] = Field(
-        default_factory=dict,
-        description="Ссылки на веб-поиск HH с теми же параметрами, что использовались в API.",
-    )
+    query: str = ""
     found_count: int = 0
     candidates: list[Candidate] = Field(default_factory=list)
     started_at: datetime | None = None
@@ -111,9 +99,7 @@ class SearchResponse(BaseModel):
 
 class SvetoforResponse(BaseModel):
     llm_raw: Any | None = None
-    queries: dict[str, str]
-    queries_with_exclusions: dict[str, str]
-    hh_search_urls: dict[str, str] = Field(default_factory=dict)
+    query: str = ""
     found_count: int = 0
     candidates: list[Candidate] = Field(default_factory=list)
     started_at: datetime | None = None

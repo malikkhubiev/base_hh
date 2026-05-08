@@ -37,6 +37,5 @@ def test_build_uses_only_required_block_for_llm(monkeypatch):
     assert "Kafka" not in calls[0]
     assert "Поддерживать пайплайн" not in calls[0]
     assert "Python" in calls[0]
-    assert result.queries["Основной"]
-    assert result.llm_debug["bool_blocks"]["Желательно"]["expression"] == ""
-    assert result.llm_debug["bool_blocks"]["Задачи"]["expression"] == ""
+    assert result.query
+    assert result.llm_raw is not None

@@ -17,10 +17,10 @@ KNOWN_BLOCKS = (BLOCK_REQUIRED, BLOCK_DESIRABLE, BLOCK_TASKS)
 
 @dataclass
 class PlannedQueries:
-    queries: dict[str, str]
+    query: str
     search_plan: list[tuple[str, str]]
     search_plan_meta: list[dict[str, Any]]
-    llm_debug: dict[str, Any]
+    llm_raw: Any | None
 
 
 class RequestQueryPlanner:
@@ -28,47 +28,17 @@ class RequestQueryPlanner:
         self.llm = LLMClient(llm_url=llm_url, token_param=llm_token_param)
         self.prompts = PromptService()
 
-    def build(self, request_text: str) -> PlannedQueries:
+    def build(self, request_text: str, *, prompt_override: str | None = None) -> PlannedQueries:
         source = request_text or ""
         blocks = self._split_blocks(source)
         required_lines = self._normalize_lines(blocks.get(BLOCK_REQUIRED, []))
-        required_expr, required_llm_response, required_debug = self._extract_bool_list(BLOCK_REQUIRED, required_lines)
+        required_expr, required_llm_response = self._extract_bool_list(BLOCK_REQUIRED, required_lines, prompt_override=prompt_override)
         search_plan, search_plan_meta = self._build_search_plan(required_expr, "", "")
         return PlannedQueries(
-            queries={"Основной": search_plan[0][1] if search_plan else ""},
+            query=search_plan[0][1] if search_plan else "",
             search_plan=search_plan,
             search_plan_meta=search_plan_meta,
-            llm_debug={
-                "source_request": source,
-                "source_blocks": blocks,
-                "bool_blocks": {
-                    BLOCK_REQUIRED: {
-                        "expression": required_expr,
-                        "llm_response": required_llm_response,
-                        "input_lines": required_lines,
-                        "normalized_lines": required_debug["normalized_lines"],
-                        "prompt_template": required_debug["prompt_template"],
-                        "prompt_rendered": required_debug["prompt_rendered"],
-                    },
-                    BLOCK_DESIRABLE: {
-                        "expression": "",
-                        "llm_response": None,
-                        "input_lines": [],
-                        "normalized_lines": [],
-                        "prompt_template": "",
-                        "prompt_rendered": "",
-                    },
-                    BLOCK_TASKS: {
-                        "expression": "",
-                        "llm_response": None,
-                        "input_lines": [],
-                        "normalized_lines": [],
-                        "prompt_template": "",
-                        "prompt_rendered": "",
-                    },
-                },
-                "final_bool_query": search_plan[0][1] if search_plan else "",
-            },
+            llm_raw=required_llm_response,
         )
 
     def _split_blocks(self, source_text: str) -> dict[str, list[str]]:
@@ -160,19 +130,14 @@ class RequestQueryPlanner:
                 }
         return results
 
-    def _extract_bool_list(self, block_name: str, lines: list[str]) -> tuple[str, Any | None, dict[str, Any]]:
+    def _extract_bool_list(self, block_name: str, lines: list[str], *, prompt_override: str | None = None) -> tuple[str, Any | None]:
         normalized = self._normalize_lines(lines)
         system_prompt = self.prompts.get_system_prompt_text().strip()
         user_prompt_template = self.prompts.get_user_prompt_text()
-        prompt_rendered_user = user_prompt_template.format(vac_reqs=chr(10).join(normalized))
-        prompt_rendered = f"{system_prompt}\n\n{prompt_rendered_user}".strip()
-        debug_data = {
-            "normalized_lines": normalized,
-            "prompt_template": user_prompt_template,
-            "prompt_rendered": prompt_rendered,
-        }
+        template = prompt_override if prompt_override is not None else f"{system_prompt}\n\n{user_prompt_template}".strip()
+        prompt_rendered = template.format(vac_reqs=chr(10).join(normalized))
         if not normalized:
-            return "", None, debug_data
+            return "", None
         raw = self.llm.call(prompt_text=prompt_rendered, iteration=0)
         response_text = self._extract_response_text(raw)
         if response_text is None:
@@ -182,7 +147,7 @@ class RequestQueryPlanner:
         expression = self._extract_bool_expression(response_text)
         if not expression:
             raise ValueError(f"LLM не вернул валидное булево выражение для блока: {block_name}")
-        return expression, raw, debug_data
+        return expression, raw
 
     def _extract_response_text(self, raw: Any) -> str | list[Any] | dict[str, Any] | None:
         if isinstance(raw, str):

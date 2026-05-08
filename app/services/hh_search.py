@@ -58,7 +58,7 @@ class HHSearchService:
 
     def search_counts_and_candidates(
         self,
-        queries: dict[str, str],
+        query: str,
         *,
         search_plan: list[tuple[str, str]] | None = None,
         search_plan_meta: list[dict[str, Any]] | None = None,
@@ -68,33 +68,29 @@ class HHSearchService:
         min_needed: int | None = None,
         max_stage_attempts: int | None = None,
     ) -> tuple[
-        dict[str, int],
-        dict[str, list[dict[str, Any]]],
-        dict[str, str],
-        dict[str, str],
+        int,
+        list[dict[str, Any]],
+        str,
         str,
         list[dict[str, Any]],
     ]:
         """
         Returns (internally):
-        - found_counts by level (currently only 'Основной' is used)
-        - candidates_by_level (up to per_page) by level
-        - full_queries_with_exclusions by level
-        - hh_web_urls_by_level (same params as API)
+        - found_count
+        - candidates (up to per_page)
+        - final_query (last query attempted)
+        - final_search_url (HH web url for last query)
+        - stage_attempts (each attempt includes query_with_exclusion and web_url)
         """
         trace_step(
             logger,
             "hh_search",
             "search_counts_and_candidates.start",
-            level_keys=list(queries.keys()),
+            has_search_plan=bool(search_plan),
             per_page=per_page,
             min_needed=min_needed,
             source_text_preview=(source_text or "")[:300],
         )
-        found_counts: dict[str, int] = {}
-        candidates_by_level: dict[str, list[dict[str, Any]]] = {}
-        full_queries: dict[str, str] = {}
-        web_urls: dict[str, str] = {}
         filters = self._build_search_filters(
             source_text=source_text,
             area_id=area_id,
@@ -103,14 +99,13 @@ class HHSearchService:
         if search_plan:
             ordered_pairs = search_plan
         else:
-            ordered_pairs = list(queries.items())
+            ordered_pairs = [("Этап 1", query)]
 
         collected: list[dict[str, Any]] = []
         collected_ids: set[str] = set()
         last_query = ""
         last_web_url = ""
         last_count = 0
-        used_stage_name = ""
         stage_attempts: list[dict[str, Any]] = []
         min_needed_int = int(min_needed) if min_needed is not None else int(per_page)
         min_needed_int = max(1, min_needed_int)
@@ -133,7 +128,6 @@ class HHSearchService:
                 iteration=idx,
             )
             last_count = int(count or 0)
-            used_stage_name = stage_name
             stage_items = items if isinstance(items, list) else []
             for item in stage_items:
                 cid = str(item.get("id") or "")
@@ -169,19 +163,7 @@ class HHSearchService:
                 break
 
         main_items = collected[:show_limit]
-        candidates_by_level = {
-            "Основной": main_items,
-        }
         final_count = last_count
-        found_counts = {
-            "Основной": final_count,
-        }
-        full_queries = {
-            "Основной": last_query,
-        }
-        web_urls = {
-            "Основной": last_web_url,
-        }
-        trace_step(logger, "hh_search", "search_counts_and_candidates.complete", found_counts=found_counts)
-        return found_counts, candidates_by_level, full_queries, web_urls, last_query, stage_attempts
+        trace_step(logger, "hh_search", "search_counts_and_candidates.complete", found_count=final_count, collected=len(main_items))
+        return final_count, main_items, last_query, last_web_url, stage_attempts
 

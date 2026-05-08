@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter
+from fastapi import HTTPException
 from fastapi.responses import PlainTextResponse
 
 from app.core.settings import settings
@@ -37,48 +38,47 @@ MAX_TOTAL_SEARCH_ITERATIONS = 100
 def _run_query_generation(
     *,
     request_text: str,
-    system_prompt_override: str | None,
-    user_prompt_override: str | None,
-    queries_override: dict[str, str] | None,
-) -> tuple[dict[str, str], Any | None, list[tuple[str, str]], list[dict[str, Any]], datetime, datetime]:
+    prompt_override: str | None,
+    query_override: str | None,
+) -> tuple[str, Any | None, list[tuple[str, str]], list[dict[str, Any]], datetime, datetime]:
     """Генерация или подстановка булевых запросов; возвращает (queries, llm_raw, started_at, bool_finished_at)."""
-    if not (request_text or "").strip():
-        request_text = PromptService().get_default_request_text()
+    if not (request_text or "").strip() and not (query_override or "").strip():
+        raise HTTPException(status_code=400, detail="request_text is required (use /api/default_request button in UI if needed)")
     started_at = datetime.utcnow()
     trace_step(
         _log,
         "workflow",
         "_run_query_generation.start",
-        has_queries_override=queries_override is not None,
+        has_query_override=(query_override is not None),
         request_text_preview=(request_text or "")[:500],
     )
-    if queries_override is not None:
-        qn = {"Основной": str((queries_override or {}).get("Основной") or "")}
-        trace_step(_log, "workflow", "_run_query_generation.override_queries", keys=list(qn.keys()))
+    if query_override is not None:
+        q = str(query_override or "").strip()
+        trace_step(_log, "workflow", "_run_query_generation.override_query", query_len=len(q))
         plan = [
-            ("Этап override 1", qn.get("Основной", "")),
+            ("Этап override 1", q),
         ]
         plan = [(k, v) for k, v in plan if v]
         meta = [{"stage": k, "query": v} for k, v in plan]
-        return qn, None, plan, meta, started_at, started_at
+        return q, None, plan, meta, started_at, started_at
 
     # Новая логика из task.txt: разбивка запроса на блоки и комбинаторика.
     planner = RequestQueryPlanner(
         llm_url=settings.llm_url,
         llm_token_param=settings.llm_token_param,
     )
-    planned = planner.build(request_text)
-    queries = planned.queries
-    llm_raw = planned.llm_debug
+    planned = planner.build(request_text, prompt_override=prompt_override)
+    query = planned.query
+    llm_raw = planned.llm_raw
     bool_finished_at = datetime.utcnow()
     trace_step(
         _log,
         "workflow",
         "_run_query_generation.llm_done",
-        level_keys=list(queries.keys()),
+        query_len=len(query or ""),
         llm_raw_is_none=llm_raw is None,
     )
-    return queries, llm_raw, planned.search_plan, planned.search_plan_meta, started_at, bool_finished_at
+    return query, llm_raw, planned.search_plan, planned.search_plan_meta, started_at, bool_finished_at
 
 
 def _normalize_candidates_by_level(candidates_by_level_raw: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
@@ -132,21 +132,20 @@ def user_prompt() -> str:
 
 @router.post("/generate_queries", response_model=GenerateQueriesResponse)
 def generate_queries(payload: GenerateQueriesRequest):
-    request_text = payload.request_text or PromptService().get_default_request_text()
+    request_text = payload.request_text or ""
     trace_step(
         _log,
         "workflow",
         "generate_queries",
         request_text_preview=(request_text or "")[:300],
-        has_queries_override=payload.queries_override is not None,
+        has_query_override=payload.query_override is not None,
     )
-    queries, llm_raw, _, _, _, _ = _run_query_generation(
+    query, llm_raw, _, _, _, _ = _run_query_generation(
         request_text=request_text,
-        system_prompt_override=payload.system_prompt_override,
-        user_prompt_override=payload.user_prompt_override,
-        queries_override=payload.queries_override,
+        prompt_override=payload.prompt_override,
+        query_override=payload.query_override,
     )
-    return GenerateQueriesResponse(llm_raw=llm_raw, queries=queries)  # type: ignore[arg-type]
+    return GenerateQueriesResponse(llm_raw=llm_raw, query=query)
 
 
 def _run_search_with_restarts(
@@ -155,12 +154,11 @@ def _run_search_with_restarts(
     request_text: str,
     area_id: int,
 ) -> tuple[
-    dict[str, str],
+    str,
     Any | None,
-    dict[str, int],
-    dict[str, list[dict[str, Any]]],
-    dict[str, str],
-    dict[str, str],
+    int,
+    list[dict[str, Any]],
+    str,
     str,
     list[dict[str, Any]],
     datetime,
@@ -194,18 +192,17 @@ def _run_search_with_restarts(
                 max_total_iterations=MAX_TOTAL_SEARCH_ITERATIONS,
             )
             break
-        queries, llm_raw, search_plan, search_plan_meta, started_at, bool_finished_at = _run_query_generation(
+        query, llm_raw, search_plan, search_plan_meta, started_at, bool_finished_at = _run_query_generation(
             request_text=request_text,
-            system_prompt_override=payload.system_prompt_override,
-            user_prompt_override=payload.user_prompt_override,
-            queries_override=payload.queries_override,
+            prompt_override=payload.prompt_override,
+            query_override=payload.query_override,
         )
         if started_at_overall is None:
             started_at_overall = started_at
         bool_finished_at_last = bool_finished_at
 
-        found_counts, candidates_by_level_raw, full_queries, web_urls, final_boolean_query, stage_attempts = hh.search_counts_and_candidates(
-            queries,
+        found_count, candidates_raw, final_boolean_query, final_search_url, stage_attempts = hh.search_counts_and_candidates(
+            query,
             search_plan=search_plan,
             search_plan_meta=search_plan_meta,
             source_text=request_text,
@@ -225,19 +222,18 @@ def _run_search_with_restarts(
                     accumulated_attempts = accumulated_attempts[:-overflow] if overflow <= len(accumulated_attempts) else []
                 total_iterations = MAX_TOTAL_SEARCH_ITERATIONS
         last_output = (
-            queries,
+            query,
             llm_raw,
-            found_counts,
-            candidates_by_level_raw,
-            full_queries,
-            web_urls,
+            found_count,
+            candidates_raw,
             final_boolean_query,
+            final_search_url,
         )
-        current_count = len(candidates_by_level_raw.get("Основной", []))
-        if current_count > best_count:
-            best_count = current_count
+        current_collected = len(candidates_raw or [])
+        if current_collected > best_count:
+            best_count = current_collected
             best_output = last_output
-        if len(candidates_by_level_raw.get("Основной", [])) >= payload.candidates_limit:
+        if current_collected >= payload.candidates_limit:
             break
         prompt_restarts += 1
 
@@ -245,15 +241,14 @@ def _run_search_with_restarts(
     if not chosen_output or started_at_overall is None or bool_finished_at_last is None or hh_finished_at_last is None:
         raise RuntimeError("Search pipeline failed unexpectedly")
 
-    queries, llm_raw, found_counts, candidates_by_level_raw, full_queries, web_urls, final_boolean_query = chosen_output
+    query, llm_raw, found_count, candidates_raw, final_boolean_query, final_search_url = chosen_output
     return (
-        queries,
+        query,
         llm_raw,
-        found_counts,
-        candidates_by_level_raw,
-        full_queries,
-        web_urls,
+        found_count,
+        candidates_raw,
         final_boolean_query,
+        final_search_url,
         accumulated_attempts,
         started_at_overall,
         bool_finished_at_last,
@@ -265,19 +260,18 @@ def _run_search_with_restarts(
 
 @router.post("/search", response_model=SearchResponse, response_model_exclude_none=True)
 def search(payload: SearchRequest):
-    request_text = payload.request_text or PromptService().get_default_request_text()
+    request_text = payload.request_text or ""
     trace_step(_log, "workflow", "search.start", area_id=payload.area_id, candidates_limit=payload.candidates_limit, request_preview=(request_text or "")[:300])
     area_id = payload.area_id or settings.area_id
     trace_step(_log, "workflow", "search.params_resolved", area_id=area_id)
 
     (
-        queries,
+        query,
         llm_raw,
-        found_counts,
-        candidates_by_level_raw,
-        full_queries,
-        web_urls,
+        found_count,
+        candidates_raw,
         final_boolean_query,
+        final_search_url,
         stage_attempts,
         started_at,
         bool_finished_at,
@@ -286,20 +280,13 @@ def search(payload: SearchRequest):
         prompt_restarts,
     ) = _run_search_with_restarts(payload=payload, request_text=request_text, area_id=area_id)
     finished_at = hh_finished_at
-    trace_step(_log, "workflow", "search.hh_done", found_counts=found_counts)
+    trace_step(_log, "workflow", "search.hh_done", found_count=found_count, collected=len(candidates_raw or []))
 
-    candidates_by_level = _normalize_candidates_by_level(candidates_by_level_raw)
-
-    trace_step(_log, "workflow", "search.normalized_candidates", counts_by_level={k: len(v) for k, v in candidates_by_level.items()})
-
-    final_search_url = web_urls.get("Основной")
-    found_count = int((found_counts or {}).get("Основной") or 0)
-    candidates = candidates_by_level.get("Основной", []) or []
+    candidates_by_level = _normalize_candidates_by_level({"main": candidates_raw or []})
+    candidates = candidates_by_level.get("main", []) or []
     return SearchResponse(
         llm_raw=llm_raw,
-        queries=queries,  # type: ignore[arg-type]
-        queries_with_exclusions=full_queries,  # type: ignore[arg-type]
-        hh_search_urls=web_urls,  # type: ignore[arg-type]
+        query=final_boolean_query or query,
         found_count=found_count,
         candidates=candidates,  # type: ignore[arg-type]
         started_at=started_at,
@@ -316,11 +303,9 @@ def search(payload: SearchRequest):
 
 def _pick_best_level_by_candidates(candidates_by_level_raw: dict[str, list[dict]]):
     counts = {k: len(v or []) for k, v in candidates_by_level_raw.items()}
-    if (candidates_by_level_raw.get("Основной") or []):
-        trace_step(_log, "workflow", "_pick_best_level_by_candidates", choice="Основной", counts=counts)
-        return "Основной"
-    trace_step(_log, "workflow", "_pick_best_level_by_candidates", choice="Основной_fallback", counts=counts)
-    return "Основной"
+    choice = max(counts, key=lambda k: counts.get(k, 0) or 0) if counts else "main"
+    trace_step(_log, "workflow", "_pick_best_level_by_candidates", choice=choice, counts=counts)
+    return choice
 
 
 def _candidate_name(candidate: dict) -> str:
@@ -571,21 +556,19 @@ async def _collect_traffic_light_candidates(
 
 @router.post("/svetofor", response_model=SvetoforResponse, response_model_exclude_none=True)
 async def svetofor(payload: SearchRequest):
-    request_text = payload.request_text or PromptService().get_default_request_text()
+    request_text = payload.request_text or ""
     trace_step(_log, "workflow", "svetofor.start", request_preview=(request_text or "")[:300])
     area_id = payload.area_id or settings.area_id
 
     top_x = max(1, int(payload.candidates_limit))
     search_payload = payload.model_copy(update={"candidates_limit": top_x})
     (
-        queries,
+        query,
         llm_raw,
-        found_counts,
-        candidates_by_level_raw,
-        full_queries,
-        web_urls,
+        found_count,
+        candidates_raw,
         final_boolean_query,
-        _applied_requirements,
+        final_search_url,
         stage_attempts,
         started_at,
         bool_finished_at,
@@ -595,8 +578,8 @@ async def svetofor(payload: SearchRequest):
     ) = _run_search_with_restarts(payload=search_payload, request_text=request_text, area_id=area_id)
 
     hh = HHSearchService(token_url=settings.hh_token_url, token_source=settings.token_source)
-    candidates_by_level = _normalize_candidates_by_level(candidates_by_level_raw)
-    selected_list = candidates_by_level.get("Основной", []) or []
+    candidates_by_level = _normalize_candidates_by_level({"main": candidates_raw or []})
+    selected_list = candidates_by_level.get("main", []) or []
     candidates_for_tl = selected_list[:top_x]
 
     scored_candidates = await _collect_traffic_light_candidates(hh, payload, candidates_for_tl)
@@ -607,12 +590,9 @@ async def svetofor(payload: SearchRequest):
     found_count = len(kept_candidates)
 
     finished_at = datetime.utcnow()
-    final_search_url = web_urls.get("Основной")
     return SvetoforResponse(
         llm_raw=llm_raw,
-        queries=queries,  # type: ignore[arg-type]
-        queries_with_exclusions=full_queries,  # type: ignore[arg-type]
-        hh_search_urls=web_urls,  # type: ignore[arg-type]
+        query=final_boolean_query or query,
         found_count=found_count,
         candidates=kept_candidates,  # type: ignore[arg-type]
         started_at=started_at,

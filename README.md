@@ -47,7 +47,7 @@ curl -X POST "http://127.0.0.1:8000/api/generate_queries" \
 ```json
 {
   "llm_raw": {"response": "(python) AND (fastapi)"},
-  "queries": {"Основной": "(python) AND (fastapi)"}
+  "query": "(python) AND (fastapi)"
 }
 ```
 
@@ -69,7 +69,7 @@ curl -X POST "http://127.0.0.1:8000/api/search" \
 
 ```json
 {
-  "queries": {"Основной": "(python) AND (fastapi)"},
+  "query": "(python) AND (fastapi)",
   "found_count": 2000,
   "candidates": [{"id": "123"}],
   "final_boolean_query": "(python) AND (fastapi)"

@@ -9,25 +9,20 @@
 
 ### 1) `POST /api/search` — поиск кандидатов HH
 
-**Назначение**: генерирует булевы запросы (через LLM или через `queries_override`), делает поиск в HH, возвращает кандидатов и вспомогательную отладочную информацию.
+**Назначение**: генерирует булевый запрос (через LLM или через `query_override`), делает поиск в HH, возвращает кандидатов и мета-информацию этапов.
 
 #### Вход (JSON)
 
-- **request_text** (`string`, optional): текст вакансии/требований. Если пусто, сервер подставит дефолтный текст.
+- **request_text** (`string`, optional): текст вакансии/требований.
 - **candidates_limit** (`int`, optional, 1..200, default 20): минимум кандидатов, который пытаемся набрать.
 - **area_id** (`int`, optional): регион HH (если не передан, берётся из `AREA_ID`/настроек).
-- **system_prompt_override** (`string`, optional): переопределение системного промпта для LLM.
-- **user_prompt_override** (`string`, optional): переопределение user prompt для LLM.
-- **queries_override** (`object`, optional): если передано — шаг LLM пропускается, сервер использует готовые булевы запросы.
-  - ключи: `"Основной"`
-  - значения: строка bool-запроса
+- **prompt_override** (`string`, optional): переопределение промпта для LLM одним текстом (можно использовать `{vac_reqs}`).
+- **query_override** (`string`, optional): если передано — шаг LLM пропускается, сервер использует этот булевый запрос.
 
 #### Выход (JSON)
 
-- **llm_raw** (`any | null`): raw/debug от LLM (если LLM вызывался).
-- **queries** (`object`): булевы запросы по уровням.
-- **queries_with_exclusions** (`object`): запросы с исключениями (если применялись в планах ослабления).
-- **hh_search_urls** (`object`): ссылки на web-поиск HH с теми же параметрами.
+- **llm_raw** (`any | null`): raw от LLM (если LLM вызывался).
+- **query** (`string`): итоговый булевый запрос.
 - **found_count** (`int`): сколько найдено в HH (для основного запроса).
 - **candidates** (`array[Candidate]`): кандидаты (до `candidates_limit*3`).
 - **final_boolean_query** (`string | null`): итоговый булевый запрос.
@@ -36,6 +31,80 @@
 - **total_iterations** (`int`): всего итераций планировщика/ослабления.
 - **prompt_restarts** (`int`): сколько раз перезапускали генерацию запросов.
 - **started_at / bool_finished_at / hh_finished_at / finished_at** (`datetime | null`): тайминги этапов.
+
+#### Пример
+
+**Вход (JSON)**:
+
+```json
+{
+  "request_text": "Нужен Python backend разработчик: FastAPI, PostgreSQL, Docker",
+  "candidates_limit": 20,
+  "area_id": 113,
+  "prompt_override": null,
+  "query_override": null
+}
+```
+
+**Выход (JSON)** (пример):
+
+```json
+{
+  "llm_raw": { "response": "(python) AND (fastapi) AND (postgresql)" },
+  "query": "(python) AND (fastapi) AND (postgresql)",
+  "found_count": 123,
+  "candidates": [
+    {
+      "id": "1",
+      "title": "Python Developer",
+      "url": "https://hh.ru/resume/1",
+      "alternate_url": "https://hh.ru/resume/1?query=...",
+      "created_at": "2024-01-01T10:00:00+00:00",
+      "updated_at": "2024-02-01T12:00:00+00:00",
+      "age": 30,
+      "area": { "id": "113", "name": "Россия" },
+      "employer": null,
+      "salary": { "amount": 180000, "currency": "RUR" },
+      "experience": { "total_months": 60, "text": "более 6 лет" },
+      "experience_full": [
+        {
+          "start": "2021-01-01",
+          "end": "2023-01-01",
+          "company": "ACME",
+          "position": "Backend Developer",
+          "industries": [],
+          "area": { "id": "113", "name": "Россия" }
+        }
+      ],
+      "skills": ["Python", "FastAPI", "PostgreSQL"],
+      "tags": [],
+      "first_name": "Иван",
+      "last_name": "Иванов"
+    }
+  ],
+  "final_boolean_query": "(python) AND (fastapi) AND (postgresql)",
+  "final_search_url": "https://tomsk.hh.ru/search/resume?text=...&area=113&...",
+  "stage_attempts": [
+    {
+      "stage": "Этап 1: обязательные",
+      "query": "(python) AND (fastapi) AND (postgresql)",
+      "query_with_exclusion": "(python) AND (fastapi) AND (postgresql)",
+      "found": 123,
+      "collected": 20,
+      "target": 20,
+      "enough": true,
+      "web_url": "https://tomsk.hh.ru/search/resume?text=...&area=113&..."
+    }
+  ],
+  "total_iterations": 1,
+  "prompt_restarts": 0,
+  "started_at": "2026-05-08T04:10:00Z",
+  "bool_finished_at": "2026-05-08T04:10:02Z",
+  "hh_finished_at": "2026-05-08T04:10:05Z",
+  "finished_at": "2026-05-08T04:10:05Z"
+}
+```
+
 #### Candidate (внутри `candidates`)
 
 Поля (возможны `null`):

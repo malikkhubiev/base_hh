@@ -362,9 +362,7 @@ def index() -> str:
   const state = {
     candidates: [],
     foundCount: 0,
-    queries: null,
-    queriesWithExclusions: null,
-    hhSearchUrls: null,
+    query: "",
     trafficLightById: null,
     trafficLightCandidates: [],
     trafficLightCandidatesLast: [],
@@ -506,7 +504,7 @@ def index() -> str:
   }
 
   function renderTrafficLightTableInto(levelName, items) {
-    const idx = String(levelName || "Основной").toLowerCase().replace(/[^a-zа-я0-9]+/gi, "-");
+    const idx = String(levelName || "main").toLowerCase().replace(/[^a-zа-я0-9]+/gi, "-");
     const block = el(`trafficLightBlock-${idx}`);
     const tbody = el(`tlTbody-${idx}`);
     if (!block || !tbody) return;
@@ -682,11 +680,10 @@ def index() -> str:
     if (e.key === "Escape") el("tlModalBackdrop").style.display = "none";
   });
 
-  function renderQueries(queries, hhUrlsByLevel, finalQuery, finalUrl) {
+  function renderQueries(query, finalUrl) {
     const q = el("queries");
     q.innerHTML = "";
-    const firstQuery = Object.values(queries || {}).find((x) => typeof x === "string" && x) || "";
-    const text = finalQuery || firstQuery;
+    const text = String(query || "");
     const div = document.createElement("div");
     div.className = "card";
     div.innerHTML = `
@@ -695,8 +692,7 @@ def index() -> str:
     `;
     q.appendChild(div);
     q.style.display = "grid";
-    const firstUrl = Object.values(hhUrlsByLevel || {}).find((x) => typeof x === "string" && x) || "";
-    renderQueryLinks(text, finalUrl || firstUrl || buildHhSearchUrl(text));
+    renderQueryLinks(text, finalUrl || buildHhSearchUrl(text));
   }
 
   function renderFinalQueryInfo() {
@@ -1084,7 +1080,7 @@ def index() -> str:
       const data = await api("/api/generate_queries", {
         request_text: requestText,
       });
-      renderQueries(data.queries, null, data.final_boolean_query, data.final_search_url);
+      renderQueries(data.query, null);
       el("results").style.display = "none";
       el("trafficLightBlock").style.display = "none";
       const tbody = el("tlTbody");
@@ -1115,13 +1111,11 @@ def index() -> str:
         request_text: requestText,
         candidates_limit: getCandidatesLimit(),
       });
-      renderQueries(data.queries, data.hh_search_urls, data.final_boolean_query, data.final_search_url);
+      renderQueries(data.query, data.final_search_url);
       const candidates = Array.isArray(data.candidates) ? data.candidates : [];
       state.candidates = candidates;
       state.foundCount = Number(data.found_count || 0);
-      state.queries = data.queries;
-      state.queriesWithExclusions = data.queries_with_exclusions;
-      state.hhSearchUrls = data.hh_search_urls;
+      state.query = data.query || "";
       state.startedAt = data.started_at || null;
       state.boolFinishedAt = data.bool_finished_at || null;
       state.hhFinishedAt = data.hh_finished_at || null;

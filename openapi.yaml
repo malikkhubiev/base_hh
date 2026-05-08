@@ -108,19 +108,18 @@ components:
         request_text:
           type: string
           example: "# Обязательно:\n- Python\n- FastAPI"
-        queries_override:
-          type: object
-          additionalProperties:
-            type: string
-          example: { "Основной": "(python) AND (fastapi)" }
+        prompt_override:
+          type: string
+          example: "SYS...\n\nUSER {vac_reqs}"
+        query_override:
+          type: string
+          example: "(python) AND (fastapi)"
     GenerateQueriesResponse:
       type: object
       properties:
         llm_raw: {}
-        queries:
-          type: object
-          additionalProperties:
-            type: string
+        query:
+          type: string
     SearchRequest:
       type: object
       properties:
@@ -130,16 +129,18 @@ components:
           default: 20
         area_id:
           type: integer
+        prompt_override:
+          type: string
+        query_override:
+          type: string
         include_excel:
           type: boolean
           default: false
     SearchResponse:
       type: object
       properties:
-        queries:
-          type: object
-          additionalProperties:
-            type: string
+        query:
+          type: string
         found_count: { type: integer }
         candidates:
           type: array
