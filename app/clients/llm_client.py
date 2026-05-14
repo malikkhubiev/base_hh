@@ -30,7 +30,7 @@ class LLMClient:
         # Retry typical transient statuses.
         return response.status_code >= 500 or response.status_code in (408, 409, 429)
 
-    def call(self, prompt_text: str, model="ChatGPT\\gpt-4o-mini", iteration: int | None = None, temperature: float = 0.0) -> dict[str, Any] | None:
+    def call(self, prompt_text: str, model="YandexGPT\\pro", iteration: int | None = None, temperature: float = 0.0) -> dict[str, Any] | None:
         """Send request to LLM and return parsed JSON payload."""
         request_data = {
             "requestUser": "system",
