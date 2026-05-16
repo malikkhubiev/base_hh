@@ -16,7 +16,7 @@ class Settings(BaseModel):
 
     area_id: int = Field(default_factory=lambda: int(os.getenv("AREA_ID", "113")))
 
-    # DB (PostgreSQL recommended). Example: postgresql://user:pass@localhost:5432/hh_optimizer
+    # PostgreSQL (опционально). Пример: postgresql://user:pass@host:5432/dbname
     database_url: str = Field(default_factory=lambda: os.getenv("DATABASE_URL", ""))
 settings = Settings()
 

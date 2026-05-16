@@ -167,7 +167,7 @@
 
 ### Параметры окружения (важные)
 
-- **DATABASE_URL**: Postgres DSN (обязателен; sqlite удалён)
+- **DATABASE_URL**: Postgres DSN (опционально; без него кэш резюме не пишется)
 - **AREA_ID**: дефолтный `area_id` (например `113`)
 - **LLM_URL**, **LLM_TOKEN_PARAM**
 - **HH_TOKEN_URL**

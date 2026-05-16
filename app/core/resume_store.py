@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 class ResumeStore(Protocol):
+    def ensure_schema(self) -> None: ...
     def get_resume_json(self, *, resume_id: str) -> dict[str, Any] | None: ...
     def save_resume_json(self, *, resume_id: str, resume_json: dict[str, Any]) -> None: ...
 
@@ -22,6 +23,8 @@ class PostgresResumeStoreConfig:
 
 
 class PostgresResumeStore:
+    """Хранит полные JSON резюме HH только после платного открытия в сценарии скоринга."""
+
     def __init__(self, *, config: PostgresResumeStoreConfig) -> None:
         self._dsn = config.dsn
 
@@ -45,7 +48,6 @@ class PostgresResumeStore:
                 cur.execute("CREATE INDEX IF NOT EXISTS idx_resume_cache_fetched_at ON resume_cache(fetched_at);")
 
     def get_resume_json(self, *, resume_id: str) -> dict[str, Any] | None:
-        self.ensure_schema()
         with self._connect() as conn:
             with conn.cursor() as cur:
                 cur.execute("SELECT resume_json FROM resume_cache WHERE resume_id=%s", (resume_id,))
@@ -63,7 +65,6 @@ class PostgresResumeStore:
                 return None
 
     def save_resume_json(self, *, resume_id: str, resume_json: dict[str, Any]) -> None:
-        self.ensure_schema()
         fetched_at = datetime.now(timezone.utc)
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -80,6 +81,9 @@ class PostgresResumeStore:
 
 
 class NoopResumeStore:
+    def ensure_schema(self) -> None:
+        return None
+
     def get_resume_json(self, *, resume_id: str) -> dict[str, Any] | None:
         return None
 
@@ -93,3 +97,12 @@ def get_resume_store() -> ResumeStore:
         return NoopResumeStore()
     return PostgresResumeStore(config=PostgresResumeStoreConfig(dsn=dsn))
 
+
+def persist_scored_resume(*, resume_id: str, resume_json: dict[str, Any]) -> None:
+    """Сохраняет полное резюме после открытия в скоринге (traffic_light / screening / svetofor)."""
+    if not resume_id or not isinstance(resume_json, dict) or not resume_json:
+        return
+    try:
+        get_resume_store().save_resume_json(resume_id=str(resume_id), resume_json=resume_json)
+    except Exception:
+        logger.exception("Failed to persist scored resume id=%s", resume_id)

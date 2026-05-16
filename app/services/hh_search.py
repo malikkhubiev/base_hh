@@ -66,7 +66,6 @@ class HHSearchService:
         area_id: int | None,
         per_page: int = 20,
         min_needed: int | None = None,
-        max_stage_attempts: int | None = None,
     ) -> tuple[
         int,
         list[dict[str, Any]],
@@ -109,33 +108,32 @@ class HHSearchService:
         stage_attempts: list[dict[str, Any]] = []
         min_needed_int = int(min_needed) if min_needed is not None else int(per_page)
         min_needed_int = max(1, min_needed_int)
-        show_limit = max(min_needed_int, int(per_page))
+        display_limit = min(200, min_needed_int * 3)
+        fetch_per_page = max(display_limit, int(per_page))
         for idx, (stage_name, q) in enumerate(ordered_pairs):
-            if max_stage_attempts is not None and len(stage_attempts) >= max_stage_attempts:
-                break
-            if not q:
-                continue
-            full_q = q
+            full_q = q if q is not None else ""
             last_query = full_q
-            web_url = self.hh.build_web_search_url(query=q, filters=filters, per_page=show_limit)
+            web_url = self.hh.build_web_search_url(query=full_q, filters=filters, per_page=fetch_per_page)
             last_web_url = web_url
 
             count, items = self.hh.search(
                 query=full_q,
                 filters=filters,
-                per_page=show_limit,
+                per_page=fetch_per_page,
                 level_name=stage_name,
                 iteration=idx,
             )
             last_count = int(count or 0)
             stage_items = items if isinstance(items, list) else []
+            stage_new = 0
             for item in stage_items:
                 cid = str(item.get("id") or "")
                 if not cid or cid in collected_ids:
                     continue
                 collected_ids.add(cid)
                 collected.append(item)
-                if len(collected) >= show_limit:
+                stage_new += 1
+                if len(collected) >= display_limit:
                     break
             stage_attempts.append(
                 {
@@ -156,13 +154,14 @@ class HHSearchService:
                 level=stage_name,
                 found=last_count,
                 items_returned=len(stage_items),
+                stage_new=stage_new,
                 collected=len(collected),
             )
-            # Стоп-условие: как только набрали минимум — не продолжаем "ослабления" (удаление пункта булевого запроса).
+            # Минимум набран — дальше не ослабляем; на текущем этапе уже добрали до display_limit.
             if len(collected) >= min_needed_int:
                 break
 
-        main_items = collected[:show_limit]
+        main_items = collected[:display_limit]
         final_count = last_count
         trace_step(logger, "hh_search", "search_counts_and_candidates.complete", found_count=final_count, collected=len(main_items))
         return final_count, main_items, last_query, last_web_url, stage_attempts

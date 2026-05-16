@@ -307,41 +307,34 @@ def test_svetofor_keeps_only_scored_candidates(monkeypatch):
     assert body["candidates"][0]["id"] == "1"
 
 
-def test_search_uses_best_result_when_iteration_limit_reached(monkeypatch):
+def test_search_single_pass_no_prompt_restarts(monkeypatch):
     from app.api.routes import workflow
 
-    call_no = {"n": 0}
+    gen_calls = {"n": 0}
 
-    def fake_search(self, query, *, search_plan, search_plan_meta, source_text, area_id, per_page, **kwargs):
-        call_no["n"] += 1
-        if call_no["n"] == 1:
-            count = 10
-        elif call_no["n"] == 2:
-            count = 15
-        else:
-            count = 12
-        stage_attempts = [{"stage": f"Этап {i}", "query": "(python)", "query_with_exclusion": "(python)", "found": count, "collected": count, "target": per_page, "enough": count >= per_page, "web_url": "https://hh.example/search"} for i in range(40)]
+    def fake_generation(**kwargs):
+        gen_calls["n"] += 1
         return (
-            count,
-            [{"id": str(i), "title": "Python Dev", "skills": [], "tags": []} for i in range(1, count + 1)],
-            "(python)",
-            "https://hh.example/search",
-            stage_attempts,
-        )
-
-    monkeypatch.setattr(workflow.HHSearchService, "search_counts_and_candidates", fake_search)
-    monkeypatch.setattr(
-        workflow,
-        "_run_query_generation",
-        lambda **kwargs: (
             "(python)",
             {"raw": "ok"},
             [("Этап 1", "(python)")],
             [{"stage": "Этап 1", "query": "(python)"}],
             datetime.utcnow(),
             datetime.utcnow(),
-        ),
-    )
+        )
+
+    def fake_search(self, query, *, search_plan, search_plan_meta, source_text, area_id, per_page, min_needed, **kwargs):
+        count = 25
+        return (
+            count,
+            [{"id": str(i), "title": "Python Dev", "skills": [], "tags": []} for i in range(1, count + 1)],
+            "(python)",
+            "https://hh.example/search",
+            [{"stage": "Этап 1", "query": "(python)", "query_with_exclusion": "(python)", "found": count, "collected": count, "target": min_needed, "enough": True, "web_url": "https://hh.example/search"}],
+        )
+
+    monkeypatch.setattr(workflow, "_run_query_generation", fake_generation)
+    monkeypatch.setattr(workflow.HHSearchService, "search_counts_and_candidates", fake_search)
     client = TestClient(app)
     res = client.post(
         "/api/search",
@@ -349,6 +342,6 @@ def test_search_uses_best_result_when_iteration_limit_reached(monkeypatch):
     )
     assert res.status_code == 200
     body = res.json()
-    assert len(body["candidates"]) == 15
-    assert body["found_count"] == 15
-    assert body["total_iterations"] == 100
+    assert gen_calls["n"] == 1
+    assert len(body["candidates"]) == 25
+    assert body["prompt_restarts"] == 0

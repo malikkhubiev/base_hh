@@ -1,5 +1,7 @@
 import logging
+import os
 import time
+from contextlib import asynccontextmanager
 from typing import Callable
 
 from fastapi import FastAPI, Request
@@ -75,9 +77,18 @@ class TraceRequestMiddleware(BaseHTTPMiddleware):
             reset_trace_id(var_token)
 
 
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    if os.getenv("SKIP_DB_INIT") != "1" and (settings.database_url or "").strip():
+        from app.core.resume_store import get_resume_store
+
+        get_resume_store().ensure_schema()
+    yield
+
+
 def create_app() -> FastAPI:
     setup_logging()
-    app = FastAPI(title=settings.app_name)
+    app = FastAPI(title=settings.app_name, lifespan=_lifespan)
     app.add_middleware(TraceRequestMiddleware)
     app.include_router(api_router)
     return app

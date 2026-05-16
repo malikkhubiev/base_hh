@@ -33,7 +33,7 @@ class RequestQueryPlanner:
         blocks = self._split_blocks(source)
         required_lines = self._normalize_lines(blocks.get(BLOCK_REQUIRED, []))
         required_expr, required_llm_response = self._extract_bool_list(BLOCK_REQUIRED, required_lines, prompt_override=prompt_override)
-        search_plan, search_plan_meta = self._build_search_plan(required_expr, "", "")
+        search_plan, search_plan_meta = self._build_search_plan(required_expr, "", "", source_lines=required_lines)
         return PlannedQueries(
             query=search_plan[0][1] if search_plan else "",
             search_plan=search_plan,
@@ -214,6 +214,34 @@ class RequestQueryPlanner:
             return ""
         return re.sub(r"\bAND\b", "OR", expression, flags=re.IGNORECASE)
 
+    def _unwrap_outer_parens(self, expression: str) -> str:
+        expr = (expression or "").strip()
+        while len(expr) >= 2 and expr[0] == "(" and expr[-1] == ")":
+            depth = 0
+            wraps_whole = True
+            for i, ch in enumerate(expr):
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                    if depth == 0 and i != len(expr) - 1:
+                        wraps_whole = False
+                        break
+            if wraps_whole and depth == 0:
+                expr = expr[1:-1].strip()
+                continue
+            break
+        return expr
+
+    def _clause_list_from_required(self, required: str, source_lines: list[str]) -> list[str]:
+        expr = self._unwrap_outer_parens(required)
+        clauses = self._split_top_level(expr, "AND") if expr else []
+        clauses = [self._unwrap_outer_parens(c).strip() for c in clauses if c and c.strip()]
+        if len(clauses) <= 1 and len(source_lines) > 1:
+            # LLM иногда возвращает одну скобочную кашу — тогда режем по исходным пунктам требований.
+            clauses = [self._unwrap_outer_parens(line.lstrip("- ").rstrip(";").strip()) for line in source_lines if line.strip()]
+        return [c for c in clauses if c]
+
     def _split_top_level(self, expression: str, operator: str) -> list[str]:
         op = f" {operator.upper()} "
         parts: list[str] = []
@@ -244,8 +272,10 @@ class RequestQueryPlanner:
         required: str,
         desirable: str,
         tasks: str,
+        *,
+        source_lines: list[str] | None = None,
     ) -> tuple[list[tuple[str, str]], list[dict[str, Any]]]:
-        required_clauses = self._split_top_level(required, "AND") if required else []
+        required_clauses = self._clause_list_from_required(required, source_lines or [])
         required_variants = self._build_required_variants(required_clauses) if required_clauses else ([required] if required else [])
 
         plan: list[tuple[str, str]] = []
@@ -272,20 +302,24 @@ class RequestQueryPlanner:
             [base_required, desirable, tasks],
             {BLOCK_REQUIRED: base_required, BLOCK_DESIRABLE: desirable, BLOCK_TASKS: tasks},
         )
-        for idx, req_variant in enumerate(required_variants[1:], start=1):
+        for remove_count, req_variant in enumerate(required_variants[1:], start=1):
             add(
-                f"Этап 1.{idx}: ослабить обязательные",
+                f"Этап 1.{remove_count}: убрать {remove_count} обяз.",
                 [req_variant, desirable, tasks],
                 {BLOCK_REQUIRED: req_variant, BLOCK_DESIRABLE: desirable, BLOCK_TASKS: tasks},
             )
         return plan, meta
 
     def _build_required_variants(self, clauses: list[str]) -> list[str]:
+        """
+        Варианты ослабления в text: все требования, затем убрать 1, затем 2, …
+        Последний этап — одно оставшееся требование (text не пустеет).
+        """
         clauses = [c.strip() for c in clauses if c.strip()]
         if not clauses:
             return []
         if len(clauses) == 1:
-            return [f"({clauses[0]})"]
+            return [self._join_group([clauses[0]], "AND")]
 
         variants: list[str] = []
         total = len(clauses)
@@ -320,4 +354,5 @@ class RequestQueryPlanner:
                 path.pop()
 
         backtrack(0, [])
-        return sorted(result, key=lambda tpl: tuple(-x for x in tpl))
+        # Сначала снимаем требования с меньшими индексами (0, 1, 2, …).
+        return sorted(result, key=lambda tpl: tuple(i for i in items if i not in tpl))

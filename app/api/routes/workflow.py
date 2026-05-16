@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from fastapi import HTTPException
 from fastapi.responses import PlainTextResponse
 
+from app.core.resume_store import persist_scored_resume
 from app.core.settings import settings
 from app.core.tracing import trace_step
 from app.models.schemas import (
@@ -31,10 +32,6 @@ from app.services.traffic_light_service import TrafficLightService
 
 router = APIRouter()
 _log = logging.getLogger(__name__)
-MAX_SEARCH_ITERATIONS_BY_RESTART = (30, 40, 50, 60)
-MAX_TOTAL_SEARCH_ITERATIONS = 100
-
-
 def _run_query_generation(
     *,
     request_text: str,
@@ -172,76 +169,23 @@ def _run_search_with_restarts(
         token_url=settings.hh_token_url,
         token_source=token_source,
     )
-    accumulated_attempts: list[dict[str, Any]] = []
+    query, llm_raw, search_plan, search_plan_meta, started_at, bool_finished_at = _run_query_generation(
+        request_text=request_text,
+        prompt_override=payload.prompt_override,
+        query_override=payload.query_override,
+    )
+    found_count, candidates_raw, final_boolean_query, final_search_url, stage_attempts = hh.search_counts_and_candidates(
+        query,
+        search_plan=search_plan,
+        search_plan_meta=search_plan_meta,
+        source_text=request_text,
+        area_id=area_id,
+        per_page=min(200, int(payload.candidates_limit) * 3),
+        min_needed=int(payload.candidates_limit),
+    )
+    hh_finished_at = datetime.utcnow()
+    total_iterations = len(stage_attempts)
     prompt_restarts = 0
-    total_iterations = 0
-    started_at_overall: datetime | None = None
-    bool_finished_at_last: datetime | None = None
-    hh_finished_at_last: datetime | None = None
-    last_output: tuple[Any, ...] | None = None
-    best_output: tuple[Any, ...] | None = None
-    best_count = -1
-
-    for max_attempts in MAX_SEARCH_ITERATIONS_BY_RESTART:
-        if total_iterations >= MAX_TOTAL_SEARCH_ITERATIONS:
-            trace_step(
-                _log,
-                "workflow",
-                "_run_search_with_restarts.iteration_limit_reached",
-                total_iterations=total_iterations,
-                max_total_iterations=MAX_TOTAL_SEARCH_ITERATIONS,
-            )
-            break
-        query, llm_raw, search_plan, search_plan_meta, started_at, bool_finished_at = _run_query_generation(
-            request_text=request_text,
-            prompt_override=payload.prompt_override,
-            query_override=payload.query_override,
-        )
-        if started_at_overall is None:
-            started_at_overall = started_at
-        bool_finished_at_last = bool_finished_at
-
-        found_count, candidates_raw, final_boolean_query, final_search_url, stage_attempts = hh.search_counts_and_candidates(
-            query,
-            search_plan=search_plan,
-            search_plan_meta=search_plan_meta,
-            source_text=request_text,
-            area_id=area_id,
-            per_page=min(200, int(payload.candidates_limit) * 3),
-            min_needed=int(payload.candidates_limit),
-            max_stage_attempts=max_attempts,
-        )
-        hh_finished_at_last = datetime.utcnow()
-        accumulated_attempts.extend(stage_attempts)
-        total_iterations += len(stage_attempts)
-        if total_iterations > MAX_TOTAL_SEARCH_ITERATIONS:
-            overflow = total_iterations - MAX_TOTAL_SEARCH_ITERATIONS
-            if overflow > 0:
-                if overflow <= len(stage_attempts):
-                    stage_attempts = stage_attempts[:-overflow] if overflow < len(stage_attempts) else []
-                    accumulated_attempts = accumulated_attempts[:-overflow] if overflow <= len(accumulated_attempts) else []
-                total_iterations = MAX_TOTAL_SEARCH_ITERATIONS
-        last_output = (
-            query,
-            llm_raw,
-            found_count,
-            candidates_raw,
-            final_boolean_query,
-            final_search_url,
-        )
-        current_collected = len(candidates_raw or [])
-        if current_collected > best_count:
-            best_count = current_collected
-            best_output = last_output
-        if current_collected >= payload.candidates_limit:
-            break
-        prompt_restarts += 1
-
-    chosen_output = best_output or last_output
-    if not chosen_output or started_at_overall is None or bool_finished_at_last is None or hh_finished_at_last is None:
-        raise RuntimeError("Search pipeline failed unexpectedly")
-
-    query, llm_raw, found_count, candidates_raw, final_boolean_query, final_search_url = chosen_output
     return (
         query,
         llm_raw,
@@ -249,10 +193,10 @@ def _run_search_with_restarts(
         candidates_raw,
         final_boolean_query,
         final_search_url,
-        accumulated_attempts,
-        started_at_overall,
-        bool_finished_at_last,
-        hh_finished_at_last,
+        stage_attempts,
+        started_at,
+        bool_finished_at,
+        hh_finished_at,
         total_iterations,
         prompt_restarts,
     )
@@ -509,6 +453,8 @@ async def _collect_traffic_light_candidates(
                 trace_step(_log, "workflow", "tl_candidate.skip", candidate_id=str(candidate_id), reason="resume_empty")
                 return None
 
+            persist_scored_resume(resume_id=str(candidate_id), resume_json=resume_data)
+
             exp_list = resume_data.get("experience")
             candidate_prj_exp = _extract_candidate_prj_exp(resume_data)
             full_exp = _normalize_full_experience(resume_data)
@@ -675,6 +621,8 @@ async def screening(payload: ScreeningRequest):
             cid = str(cand.get("id") or "")
             name = _candidate_name(cand) or "-"
             resume_data = await asyncio.to_thread(hh.hh.get_resume_by_id, cid)
+            if isinstance(resume_data, dict) and resume_data:
+                persist_scored_resume(resume_id=cid, resume_json=resume_data)
             candidate_prj_exp = _extract_candidate_prj_exp(resume_data or {}) if isinstance(resume_data, dict) else ""
             full_exp = _normalize_full_experience(resume_data or {}) if isinstance(resume_data, dict) else []
 

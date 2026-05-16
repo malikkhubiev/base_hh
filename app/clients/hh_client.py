@@ -7,7 +7,6 @@ from urllib.parse import urlencode
 from typing import Any
 
 import requests
-from app.core.log_store import LogStore, get_log_store
 from app.core.resume_store import ResumeStore, get_resume_store
 from app.core.tracing import trace_step
 
@@ -21,14 +20,12 @@ class HHClient:
         self,
         token_url: str = "http://int-srv:8085/metrics/hh/accessToken",
         token_source: str = "ssp",
-        log_store: LogStore | None = None,
         resume_store: ResumeStore | None = None,
     ) -> None:
         self.token_url = token_url
         self.token: str | None = None
         self.base_url = "https://api.hh.ru/resumes"
         self.token_source = token_source
-        self.log_store = log_store or get_log_store()
         self.resume_store = resume_store or get_resume_store()
 
     def get_token(self) -> str:
@@ -198,21 +195,7 @@ class HHClient:
 
             found_count = int(raw_response.get("found", 0) or 0)
             items_list = raw_response.get("items", [])
-            print(items_list)
             compact_items = self._compact_items(items_list)
-            print(compact_items)
-            # Persist in DB instead of writing JSON files.
-            try:
-                self.log_store.save_hh_search_run(
-                    level_name=level_name,
-                    query=query,
-                    iteration=iteration,
-                    found_count=found_count,
-                    items=compact_items,
-                )
-            except Exception:
-                # DB must not break the core functionality.
-                logger.exception("Failed to persist HH search run to DB")
 
             trace_step(
                 logger,
@@ -246,12 +229,6 @@ class HHClient:
             response = requests.get(f"{self.base_url}/{resume_id}", headers=headers, timeout=30)
             if response.status_code == 200:
                 data = response.json()
-                try:
-                    if isinstance(data, dict) and data:
-                        self.resume_store.save_resume_json(resume_id=str(resume_id), resume_json=data)
-                except Exception:
-                    # Cache must never break core path.
-                    logger.exception("Failed to cache resume id=%s", resume_id)
                 trace_step(
                     logger,
                     "hh_client",
