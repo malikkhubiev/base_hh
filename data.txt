@@ -1,0 +1,518 @@
+Сервис «Найти на hh» — контракт API для внешнего сервиса
+================================================================
+
+Базовый URL API:  POST/GET  http://<host>:<port>/api/...
+Swagger:         http://<host>:<port>/docs
+
+Обозначения:
+- «Найти на hh» — этот FastAPI-сервис (бэкенд).
+- «Внешний сервис» — UI/оркестратор, который вызывает API «Найти на hh».
+- HH — api.hh.ru (HeadHunter).
+
+На бэкенде между этапами хранится session_id:
+- квалификационные требования (request_text);
+- список candidate_ids этапа 1;
+- полные JSON резюме HH (таблица resume_cache в Postgres или in-memory при отсутствии DATABASE_URL);
+- метаданные сессии (таблица workflow_sessions в Postgres или in-memory при отсутствии DATABASE_URL).
+
+Схема БД создаётся автоматически при старте приложения (если задан DATABASE_URL).
+Проверка resume_cache: scripts/verify_postgres_resume_store.py
+
+Внешнему сервису на этапах 2 и 3 достаточно передавать session_id + candidate_ids[].
+
+
+================================================================
+ЭТАП 1. Указать требования → поиск и просмотр резюме (бесплатно)
+================================================================
+
+### URL (внешний сервис → «Найти на hh»)
+
+POST /api/search
+
+### Вход (JSON)
+
+| Поле               | Тип           | Обяз. | По умолчанию   | Описание |
+|--------------------|---------------|-------|----------------|----------|
+| request_text       | string        | да*   | —              | Квалификационные требования для LLM |
+| candidates_limit   | int (1..200)  | нет   | 10             | «Требуется кандидатов» |
+| area_ids           | int[]         | нет   | [113, 16]      | Регионы HH: 113 — Россия, 16 — Беларусь |
+| prompt_override    | string        | нет   | null           | Переопределение промпта LLM |
+| query_override     | string        | нет   | null           | Готовый булевый запрос (LLM пропускается) |
+
+*Обязателен request_text, если не задан query_override.
+
+Пример:
+```json
+{
+  "request_text": "# Обязательно:\n- Python\n- FastAPI",
+  "candidates_limit": 10,
+  "area_ids": [113, 16]
+}
+```
+
+### Выход (JSON)
+
+| Поле                 | Тип     | Описание |
+|----------------------|---------|----------|
+| session_id           | string  | UUID сессии; нужен на этапах 2 и 3 |
+| found_count          | int     | Сколько резюме нашёл HH по итоговому запросу |
+| query                | string  | Итоговый булевый запрос (после этапов ослабления) |
+| final_search_url     | string  | Ссылка на поиск в веб-UI HH |
+| candidates           | array   | До candidates_limit × 3 элементов |
+| candidates[].id      | string  | ID резюме HH |
+| candidates[].resume_json | object | **Сырой JSON HH** полного резюме (без контактов) |
+| llm_raw              | any     | Raw-ответ LLM генерации булевого запроса |
+| stage_attempts       | array   | Этапы ослабления булевого запроса |
+| stage_attempts[].stage | string | Название этапа, напр. «Этап 1» |
+| stage_attempts[].query | string | Булевый запрос этапа |
+| stage_attempts[].query_with_exclusion | string | Запрос с исключениями уже просмотренных |
+| stage_attempts[].found | int   | found из ответа HH на этом этапе |
+| stage_attempts[].collected | int | Сколько резюме уже собрано |
+| stage_attempts[].target | int  | Целевое количество (candidates_limit × 3) |
+| stage_attempts[].enough | bool | true, если collected ≥ target |
+| stage_attempts[].web_url | string | Ссылка на поиск HH для этого этапа |
+| total_iterations     | int     | Число итераций планировщика |
+| prompt_restarts      | int     | Сколько раз перезапускали генерацию |
+| started_at           | datetime | Начало этапа 1 (UTC) |
+| bool_finished_at     | datetime | Конец генерации булевого запроса |
+| hh_finished_at       | datetime | Конец загрузки полных резюме |
+| finished_at          | datetime | Конец всего запроса /api/search |
+
+### Пример каждого поля выхода (этап 1)
+
+```json
+{
+  "session_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "found_count": 87,
+  "query": "(python) AND (fastapi) AND (postgresql)",
+  "final_search_url": "https://hh.ru/search/resume?text=%28python%29+AND+%28fastapi%29&area=113&area=16&per_page=30",
+  "candidates": [
+    {
+      "id": "a1b2c3d4e5f6g7h8i9j0",
+      "resume_json": {
+        "id": "a1b2c3d4e5f6g7h8i9j0",
+        "title": "Python-разработчик",
+        "first_name": "Иван",
+        "last_name": "Петров",
+        "area": { "id": "1", "name": "Москва" },
+        "salary": { "amount": 250000, "currency": "RUR" },
+        "experience": [
+          {
+            "start": "2021-03-01",
+            "end": null,
+            "company": "ООО Ромашка",
+            "position": "Backend Developer",
+            "description": "FastAPI, PostgreSQL, Docker"
+          }
+        ],
+        "skill_set": ["Python", "FastAPI", "PostgreSQL"],
+        "contact": null
+      }
+    }
+  ],
+  "llm_raw": {
+    "choices": [
+      {
+        "message": {
+          "content": "{\"query\": \"(python) AND (fastapi) AND (postgresql)\"}"
+        }
+      }
+    ]
+  },
+  "stage_attempts": [
+    {
+      "stage": "Этап 1",
+      "query": "(python) AND (fastapi) AND (postgresql)",
+      "query_with_exclusion": "(python) AND (fastapi) AND (postgresql)",
+      "found": 87,
+      "collected": 30,
+      "target": 30,
+      "enough": true,
+      "web_url": "https://hh.ru/search/resume?text=%28python%29+AND+%28fastapi%29&area=113&area=16"
+    }
+  ],
+  "total_iterations": 1,
+  "prompt_restarts": 0,
+  "started_at": "2026-06-28T10:15:00.123456",
+  "bool_finished_at": "2026-06-28T10:15:03.456789",
+  "hh_finished_at": "2026-06-28T10:15:45.789012",
+  "finished_at": "2026-06-28T10:15:45.789012"
+}
+```
+
+Пояснения к примеру:
+- **session_id** — сохраняется в таблице `workflow_sessions` (Postgres) или in-memory; передаётся на этапы 2 и 3.
+- **found_count** — поле `found` из последнего успешного GET /resumes HH.
+- **query** — финальный булевый запрос, по которому набраны кандидаты (может отличаться от первого LLM-варианта после ослабления).
+- **candidates** — не более `candidates_limit × 3` (при limit=10 → до 30); **resume_json** — полный ответ HH без контактов (`contact` = null).
+- **llm_raw** — необработанный ответ LLM; структура зависит от провайдера.
+- **stage_attempts** — журнал попыток поиска; если на «Этапе 1» набрали target, следующие этапы не выполняются.
+
+### Алгоритм этапа 1 (функции бэкенда)
+
+1. **search** (`workflow.py`)
+   - Принимает SearchRequest.
+
+2. **_run_query_generation**
+   - Если `query_override` — использует его.
+   - Иначе **RequestQueryPlanner.build** — LLM разбивает требования → булевый запрос + search_plan (этапы ослабления).
+
+3. **_run_search_with_restarts** → **HHSearchService.search_counts_and_candidates**
+   - **HHSearchService._build_search_filters** — area_ids[], age_to, experience, job_search_status, period.
+   - Цель сбора: `target = candidates_limit × 3` (макс. 200).
+   - Для каждого этапа search_plan:
+     - **HHClient.search** — GET https://api.hh.ru/resumes
+     - Если collected ≥ target — стоп.
+   - Возвращает список кратких карточек из выдачи HH.
+
+4. **_fetch_full_resumes_raw**
+   - Параллельно (до 10 потоков) для каждого id:
+     - **HHClient.get_resume_by_id** — GET https://api.hh.ru/resumes/{id} (бесплатный просмотр, без контактов).
+     - **persist_resume** — сохранение в resume_cache.
+
+5. **create_session** (`workflow_session.py`)
+   - Сохраняет session_id, request_text, area_ids, candidates_limit, candidate_ids[] в Postgres (`workflow_sessions`) или in-memory.
+
+6. Ответ клиенту: session_id + candidates с сырым resume_json.
+
+
+================================================================
+ЭТАП 2. Выбрать кандидатов → светофор (ColorScore)
+================================================================
+
+UI внешнего сервиса:
+- Показывает таблицу из этапа 1.
+- По клику на имя/иконку — полное резюме из resume_json.
+- Чекбоксы → кнопка «Далее».
+
+### URL (внешний сервис → «Найти на hh»)
+
+POST /api/traffic_light
+
+### Вход (JSON)
+
+| Поле           | Тип      | Обяз. | Описание |
+|----------------|----------|-------|----------|
+| session_id     | string   | да    | Из этапа 1 |
+| candidate_ids  | string[] | да    | ID выбранных кандидатов |
+
+Пример:
+```json
+{
+  "session_id": "a1b2c3d4-....",
+  "candidate_ids": ["id1", "id2", "id3"]
+}
+```
+
+request_text и резюме **не передаются** — берутся из сессии и resume_cache.
+
+### Выход (JSON)
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| session_id | string | Та же сессия |
+| candidates | array | Отсортировано по color_score_percent ↓ |
+
+Элемент candidates[]:
+
+| Поле                 | Тип    | Описание |
+|----------------------|--------|----------|
+| id                   | string | ID резюме |
+| candidate_name       | string | ФИО или id |
+| title                | string | Позиция |
+| location             | string | Локация |
+| color_score_percent  | int    | ColorScore 0..100 |
+| requirements         | array  | Разбор по требованиям (светофор) |
+| prompt               | string | Промпт, отправленный в LLM для этого кандидата |
+| llm_raw              | any    | Сырой ответ LLM для этого кандидата |
+
+### Пример каждого поля выхода (этап 2)
+
+```json
+{
+  "session_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "candidates": [
+    {
+      "id": "a1b2c3d4e5f6g7h8i9j0",
+      "candidate_name": "Петров Иван",
+      "title": "Python-разработчик",
+      "location": "Москва",
+      "color_score_percent": 82,
+      "requirements": [
+        {
+          "requirement": "Python",
+          "resume_evidence": "Backend Developer, 3 года — Python в описании проекта",
+          "match_percent": 100,
+          "difference_comment": "Полное совпадение"
+        },
+        {
+          "requirement": "FastAPI",
+          "resume_evidence": "FastAPI в стеке последнего места работы",
+          "match_percent": 90,
+          "difference_comment": "Явно указан в опыте"
+        },
+        {
+          "requirement": "PostgreSQL",
+          "resume_evidence": "PostgreSQL упомянут один раз",
+          "match_percent": 60,
+          "difference_comment": "Опыт не детализирован"
+        }
+      ],
+      "prompt": "Оцени соответствие кандидата требованиям...\n${custReqText}\n...\n${candidatePrjExp}",
+      "llm_raw": {
+        "color_score_percent": 82,
+        "requirements": [
+          {
+            "requirement": "Python",
+            "resume_evidence": "Backend Developer, 3 года — Python в описании проекта",
+            "match_percent": 100,
+            "difference_comment": "Полное совпадение"
+          }
+        ]
+      }
+    },
+    {
+      "id": "z9y8x7w6v5u4t3s2r1q0",
+      "candidate_name": "Сидорова Анна",
+      "title": "Junior Python Developer",
+      "location": "Минск",
+      "color_score_percent": 45,
+      "requirements": [],
+      "prompt": "Оцени соответствие...",
+      "llm_raw": { "color_score_percent": 45, "requirements": [] }
+    }
+  ]
+}
+```
+
+Пояснения:
+- **candidates** отсортированы по **color_score_percent** по убыванию (82 → 45).
+- **requirements** — разбор по каждому пункту требований из request_text сессии; **match_percent** 0..100.
+- **prompt** и **llm_raw** — для отладки: что отправили в LLM и что вернулось (на каждого кандидата отдельно).
+- Если LLM не ответил — кандидат всё равно в списке с **color_score_percent** = 0 и пустым **requirements**.
+
+### Алгоритм этапа 2
+
+1. **traffic_light_from_candidates**
+   - **require_session(session_id)** — 404 если нет.
+   - **_validate_session_candidate_ids** — id должны быть из этапа 1.
+
+2. Для каждого candidate_id:
+   - **_load_resume_json** из resume_cache.
+   - **_extract_candidate_prj_exp** — текст проектного опыта.
+   - **TrafficLightService.generate_candidate_traffic_light**
+     - build_prompt → LLM (**LLMClient.call**) → parse JSON → ColorScore.
+   - **persist_scored_resume** (обновление кэша).
+
+3. **_merge_traffic_light_with_source_candidates** — все выбранные id в ответе.
+4. Сортировка по color_score_percent по убыванию.
+5. Маппинг в TrafficLightResultItem (prompt, llm_raw на каждого кандидата).
+
+
+================================================================
+ЭТАП 3. Добавить кандидатов → контакты (платно)
+================================================================
+
+UI: таблица светофора, чекбоксы, кнопка «Добавить».
+
+### URL (внешний сервис → «Найти на hh»)
+
+POST /api/contacts
+
+### Вход (JSON)
+
+| Поле           | Тип      | Обяз. | Описание |
+|----------------|----------|-------|----------|
+| session_id     | string   | да    | Из этапа 1 |
+| candidate_ids  | string[] | да    | ID отобранных после светофора |
+
+Пример:
+```json
+{
+  "session_id": "a1b2c3d4-....",
+  "candidate_ids": ["id1", "id2",...]
+}
+```
+
+### Выход (JSON)
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| session_id | string | Сессия |
+| contacts | array | Контакты по каждому id |
+
+Элемент contacts[]:
+
+| Поле           | Тип    | Описание |
+|----------------|--------|----------|
+| id             | string | ID резюме |
+| candidate_name | string | ФИО или id |
+| phone          | string | Телефон (если открыт) |
+| email          | string | Email |
+| contacts       | array  | Сырой массив contact[] из HH |
+| error          | string | Ошибка открытия (если была) |
+
+### Пример каждого поля выхода (этап 3)
+
+```json
+{
+  "session_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "contacts": [
+    {
+      "id": "a1b2c3d4e5f6g7h8i9j0",
+      "candidate_name": "Петров Иван",
+      "phone": "+7 (495) 552-73-67",
+      "email": "my-email@example.com",
+      "contacts": [
+        {
+          "comment": "Звонить после 12",
+          "contact_value": "+7 (495) 552-73-67",
+          "kind": "phone",
+          "need_verification": true,
+          "preferred": false,
+          "type": { "id": "cell", "name": "Мобильный телефон" },
+          "verified": false
+        },
+        {
+          "contact_value": "my-email@example.com",
+          "kind": "email",
+          "preferred": true,
+          "type": { "id": "email", "name": "Эл. почта" }
+        }
+      ],
+      "error": null
+    },
+    {
+      "id": "z9y8x7w6v5u4t3s2r1q0",
+      "candidate_name": "Сидорова Анна",
+      "phone": null,
+      "email": null,
+      "contacts": [],
+      "error": "failed to open contacts"
+    }
+  ]
+}
+```
+
+Пояснения:
+- Запрос **платный** — каждый id списывает контакт работодателя в HH.
+- **phone** / **email** — удобные поля нашего API, извлечённые из массива HH `contact[]` (поля `contact_value`, `kind`, `type.id`); могут быть null, если HH не отдал контакт.
+- **contacts** — сырой массив `contact[]` из JSON резюме HH после открытия контактов. Формат по [OpenAPI HH](https://api.hh.ru/openapi/redoc#tag/Prosmotr-rezyume/operation/get-resume): каждый элемент — `contact_value`, `kind` (phone/email/primary/secondary), `type` {id, name}, `preferred`, опционально `comment`, `verified`, `links`.
+- **error** — заполняется при неудаче (нет id, HH вернул ошибку, лимит контактов и т.д.); при успехе null или отсутствует.
+
+### Алгоритм этапа 3
+
+1. **open_contacts** — проверка session_id и candidate_ids.
+2. Для каждого id параллельно:
+   - **HHClient.get_resume_by_id(id, with_contacts=True)** — платный запрос к HH.
+   - **_extract_contacts_from_resume** — phone, email, contacts[].
+   - **persist_resume** — обновление кэша с контактами.
+
+
+================================================================
+«Найти на hh» → HH (api.hh.ru)
+================================================================
+
+### 0. Получение токена (внутренний SSP)
+
+GET {HH_TOKEN_URL}  (env: HH_TOKEN_URL, по умолчанию http://int-srv:8085/metrics/hh/accessToken)
+
+Выход: plain text — Bearer-токен для HH API.
+
+Функция: **HHClient.get_token**
+
+---
+
+### 1. Поиск резюме (этап 1, бесплатно)
+
+GET https://api.hh.ru/resumes
+
+Заголовки:
+- Authorization: Bearer {token}
+
+Query (основные):
+| Параметр | Пример | Описание |
+|----------|--------|----------|
+| text     | (python) AND (fastapi) | Булевый запрос |
+| area     | 113, 16 (повторяемый) | Регионы |
+| per_page | 30 | До target |
+| age_to   | 45 | |
+| experience | between3And6, moreThan6 | |
+| job_search_status | unknown, active_search, looking_for_offers | |
+| period   | 0 | За всё время |
+
+Выход HH (JSON): `{ "found": int, "items": [ {...краткая карточка...} ] }`
+
+Функция: **HHClient.search**
+
+---
+
+### 2. Просмотр полного резюме (этап 1, бесплатно, без контактов)
+
+GET https://api.hh.ru/resumes/{resume_id}
+
+Заголовки: Authorization: Bearer {token}
+
+Выход: полный JSON резюме (контакты скрыты/null).
+
+Функция: **HHClient.get_resume_by_id(with_contacts=False)**
+
+Кэш: **persist_resume** → resume_cache (PostgreSQL JSONB, если задан DATABASE_URL).
+
+---
+
+### 3. Открытие контактов (этап 3, платно)
+
+GET {url из actions.get_with_contact.url}
+  пример: https://api.hh.ru/resumes/{resume_id}?with_contact=ab65a8562d85e1798ad90d67fe8f5253
+
+Заголовки: Authorization: Bearer {token}
+
+Выход: полный JSON резюме с контактами (списание контакта у работодателя в HH).
+Поле `contact` — массив объектов с `contact_value` (актуальное поле; устаревшее `value` — deprecated).
+Дополнительно в ответе: `first_name`, `last_name`, `middle_name`, `photo`, `contact_view_status`, `contacts_open_until_date`.
+
+Функция: **HHClient.get_resume_by_id(with_contacts=True)** → **_fetch_resume_with_contacts**
+
+---
+
+### 4. LLM — генерация булевого запроса (этап 1)
+
+POST {LLM_URL}{LLM_TOKEN_PARAM}  (env: LLM_URL, LLM_TOKEN_PARAM)
+
+Функции: **RequestQueryPlanner.build**, **LLMClient.call**
+
+---
+
+### 5. LLM — светофор ColorScore (этап 2)
+
+POST {LLM_URL}{LLM_TOKEN_PARAM}
+
+Функция: **TrafficLightService.generate_candidate_traffic_light**
+
+Промпт: txt/traffic_light_prompt.txt с подстановкой ${custReqText}, ${candidatePrjExp}.
+
+
+================================================================
+Поток данных (кратко)
+================================================================
+
+```
+[Внешний UI]
+    │ POST /api/search { request_text, candidates_limit, area_ids }
+    ▼
+[Найти на hh] ──LLM──► булевый запрос
+    │ ──GET /resumes──► HH (поиск)
+    │ ──GET /resumes/{id}──► HH × N (просмотр, бесплатно)
+    │ session_id + candidates[{ id, resume_json }]
+    ▼
+[Внешний UI] выбор id → POST /api/traffic_light { session_id, candidate_ids }
+    ▼
+[Найти на hh] ──кэш резюме + LLM──► candidates[] sorted by ColorScore
+    ▼
+[Внешний UI] выбор id → POST /api/contacts { session_id, candidate_ids }
+    ▼
+[Найти на hh] ──GET with_contact──► HH (платно) → contacts[]
+```
+
+Авторизация между внешним сервисом и «Найти на hh»: **не требуется** (на текущем этапе).

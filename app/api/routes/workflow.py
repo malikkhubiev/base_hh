@@ -8,19 +8,22 @@ from fastapi import APIRouter
 from fastapi import HTTPException
 from fastapi.responses import PlainTextResponse
 
-from app.core.resume_store import persist_scored_resume, persist_resume
+from app.core.resume_store import persist_scored_resume, persist_resume, get_resume_store
 from app.core.settings import settings
 from app.core.tracing import trace_step
+from app.core.workflow_session import create_session, require_session
 from app.models.schemas import (
     GenerateQueriesRequest,
     GenerateQueriesResponse,
     SearchRequest,
     SearchResponse,
+    RawResumeCandidate,
     SvetoforResponse,
     TrafficLightCandidate,
     TrafficLightRequirement,
     TrafficLightFromCandidatesRequest,
     TrafficLightFromCandidatesResponse,
+    TrafficLightResultItem,
     ContactsRequest,
     ContactsResponse,
     CandidateContact,
@@ -152,7 +155,7 @@ def _run_search_with_restarts(
     *,
     payload: SearchRequest,
     request_text: str,
-    area_id: int,
+    area_ids: list[int],
 ) -> tuple[
     str,
     Any | None,
@@ -182,7 +185,7 @@ def _run_search_with_restarts(
         search_plan=search_plan,
         search_plan_meta=search_plan_meta,
         source_text=request_text,
-        area_id=area_id,
+        area_ids=area_ids,
         per_page=min(200, int(payload.candidates_limit) * 3),
         min_needed=int(payload.candidates_limit),
     )
@@ -217,20 +220,33 @@ def _extract_skills_from_resume(resume_data: dict[str, Any]) -> list[str]:
     return []
 
 
+def _contact_item_text(item: dict[str, Any]) -> str | None:
+    text = item.get("contact_value")
+    if isinstance(text, str) and text.strip():
+        return text.strip()
+    value = item.get("value")
+    if isinstance(value, dict):
+        formatted = value.get("formatted") or value.get("number")
+        if formatted:
+            return str(formatted)
+    elif value:
+        return str(value)
+    return None
+
+
+def _contact_item_type_id(item: dict[str, Any]) -> str:
+    ctype = item.get("type")
+    if isinstance(ctype, dict):
+        return str(ctype.get("id") or "").lower()
+    return str(ctype or "").lower()
+
+
 def _resume_has_contacts(resume_data: dict[str, Any]) -> bool:
     contact = resume_data.get("contact")
-    if not isinstance(contact, list):
-        return False
-    for item in contact:
-        if not isinstance(item, dict):
-            continue
-        value = item.get("value")
-        if isinstance(value, dict):
-            formatted = value.get("formatted") or value.get("number")
-            if formatted:
+    if isinstance(contact, list):
+        for item in contact:
+            if isinstance(item, dict) and _contact_item_text(item):
                 return True
-        elif value:
-            return True
     return bool(resume_data.get("phone") or resume_data.get("email"))
 
 
@@ -264,18 +280,16 @@ def _extract_contacts_from_resume(resume_data: dict[str, Any]) -> tuple[str | No
             if not isinstance(item, dict):
                 continue
             raw.append(item)
-            ctype = str(item.get("type") or "").lower()
-            value = item.get("value")
-            text = None
-            if isinstance(value, dict):
-                text = value.get("formatted") or value.get("number") or value.get("email")
-            elif value:
-                text = str(value)
+            text = _contact_item_text(item)
             if not text:
                 continue
-            if ctype == "email" and not email:
+            type_id = _contact_item_type_id(item)
+            kind = str(item.get("kind") or "").lower()
+            if not email and (kind == "email" or type_id == "email"):
                 email = text
-            elif ctype in {"cell", "home", "work", "phone"} and not phone:
+            elif not phone and (
+                kind == "phone" or type_id in {"cell", "home", "work", "phone"}
+            ):
                 phone = text
     if not phone and resume_data.get("phone"):
         phone = str(resume_data.get("phone"))
@@ -284,42 +298,81 @@ def _extract_contacts_from_resume(resume_data: dict[str, Any]) -> tuple[str | No
     return phone, email, raw
 
 
-async def _fetch_full_resumes_for_candidates(
+async def _fetch_full_resumes_raw(
     hh: HHSearchService,
     candidates: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Бесплатный просмотр полных резюме (без контактов) для всех кандидатов из поиска."""
+    """Бесплатный просмотр полных резюме HH; возвращает сырой JSON."""
     import asyncio
 
     trace_step(
         _log,
         "workflow",
-        "_fetch_full_resumes_for_candidates.start",
+        "_fetch_full_resumes_raw.start",
         count=len(candidates),
     )
     semaphore = asyncio.Semaphore(10)
 
-    async def fetch_one(item: dict[str, Any]) -> dict[str, Any]:
+    async def fetch_one(item: dict[str, Any]) -> dict[str, Any] | None:
         async with semaphore:
             cid = str(item.get("id") or "")
             if not cid:
-                return item
+                return None
             resume_data = await asyncio.to_thread(hh.hh.get_resume_by_id, cid)
             if isinstance(resume_data, dict) and resume_data:
-                return _merge_candidate_with_full_resume(item, resume_data)
-            return item
+                persist_resume(resume_id=cid, resume_json=resume_data)
+                return {"id": cid, "resume_json": resume_data}
+            return None
 
     results = await asyncio.gather(*(fetch_one(c) for c in candidates))
-    trace_step(_log, "workflow", "_fetch_full_resumes_for_candidates.done", count=len(results))
-    return list(results)
+    out = [r for r in results if isinstance(r, dict)]
+    trace_step(_log, "workflow", "_fetch_full_resumes_raw.done", count=len(out))
+    return out
+
+
+def _load_resume_json(resume_id: str) -> dict[str, Any] | None:
+    try:
+        cached = get_resume_store().get_resume_json(resume_id=str(resume_id))
+    except Exception:
+        cached = None
+    return cached if isinstance(cached, dict) and cached else None
+
+
+def _validate_session_candidate_ids(session, candidate_ids: list[str]) -> None:
+    allowed = set(session.candidate_ids)
+    unknown = [cid for cid in candidate_ids if str(cid) not in allowed]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"candidate_ids not in session: {unknown[:5]}",
+        )
+
+
+def _traffic_light_item_from_candidate(tl: TrafficLightCandidate) -> TrafficLightResultItem:
+    return TrafficLightResultItem(
+        id=str(tl.id),
+        candidate_name=tl.candidate_name,
+        title=tl.title,
+        location=tl.location,
+        color_score_percent=int(tl.color_score_percent),
+        requirements=list(tl.requirements or []),
+        llm_raw=tl.debug_llm_raw,
+        prompt=tl.debug_prompt,
+    )
 
 
 @router.post("/search", response_model=SearchResponse, response_model_exclude_none=True)
 async def search(payload: SearchRequest):
     request_text = payload.request_text or ""
-    trace_step(_log, "workflow", "search.start", area_id=payload.area_id, candidates_limit=payload.candidates_limit, request_preview=(request_text or "")[:300])
-    area_id = payload.area_id or settings.area_id
-    trace_step(_log, "workflow", "search.params_resolved", area_id=area_id)
+    area_ids = payload.area_ids or [113, 16]
+    trace_step(
+        _log,
+        "workflow",
+        "search.start",
+        area_ids=area_ids,
+        candidates_limit=payload.candidates_limit,
+        request_preview=(request_text or "")[:300],
+    )
 
     (
         query,
@@ -334,25 +387,31 @@ async def search(payload: SearchRequest):
         hh_finished_at,
         total_iterations,
         prompt_restarts,
-    ) = _run_search_with_restarts(payload=payload, request_text=request_text, area_id=area_id)
+    ) = _run_search_with_restarts(payload=payload, request_text=request_text, area_ids=area_ids)
     trace_step(_log, "workflow", "search.hh_done", found_count=found_count, collected=len(candidates_raw or []))
 
     hh = HHSearchService(token_url=settings.hh_token_url, token_source=settings.token_source)
-    enriched_raw = await _fetch_full_resumes_for_candidates(hh, candidates_raw or [])
+    raw_candidates = await _fetch_full_resumes_raw(hh, candidates_raw or [])
     resumes_finished_at = datetime.utcnow()
 
-    candidates_by_level = _normalize_candidates_by_level({"main": enriched_raw or []})
-    candidates = candidates_by_level.get("main", []) or []
+    candidate_ids = [str(c["id"]) for c in raw_candidates if c.get("id")]
+    session = create_session(
+        request_text=request_text,
+        area_ids=area_ids,
+        candidates_limit=int(payload.candidates_limit),
+        candidate_ids=candidate_ids,
+    )
+
     return SearchResponse(
+        session_id=session.session_id,
         llm_raw=llm_raw,
         query=final_boolean_query or query,
         found_count=found_count,
-        candidates=candidates,  # type: ignore[arg-type]
+        candidates=[RawResumeCandidate(id=str(c["id"]), resume_json=c["resume_json"]) for c in raw_candidates],  # type: ignore[arg-type]
         started_at=started_at,
         bool_finished_at=bool_finished_at,
         hh_finished_at=resumes_finished_at,
         finished_at=resumes_finished_at,
-        final_boolean_query=final_boolean_query,
         final_search_url=final_search_url,
         stage_attempts=stage_attempts,  # type: ignore[arg-type]
         total_iterations=total_iterations,
@@ -464,7 +523,7 @@ def _merge_traffic_light_with_source_candidates(
 
 async def _collect_traffic_light_candidates(
     hh: HHSearchService,
-    payload: SearchRequest,
+    request_text: str,
     candidates_for_tl: list[dict],
 ) -> list:
     trace_step(
@@ -499,7 +558,9 @@ async def _collect_traffic_light_candidates(
             resume_url = c.get("alternate_url") or c.get("url")
             trace_step(_log, "workflow", "tl_candidate.fetch_resume", candidate_id=str(candidate_id), name=name)
 
-            resume_data = await asyncio.to_thread(hh.hh.get_resume_by_id, str(candidate_id))
+            resume_data = _load_resume_json(str(candidate_id))
+            if not resume_data:
+                resume_data = await asyncio.to_thread(hh.hh.get_resume_by_id, str(candidate_id))
             if not isinstance(resume_data, dict):
                 trace_step(_log, "workflow", "tl_candidate.skip", candidate_id=str(candidate_id), reason="resume_empty")
                 return None
@@ -520,7 +581,7 @@ async def _collect_traffic_light_candidates(
             try:
                 tl_candidate, _llm_raw_tl = await asyncio.to_thread(
                     traffic_light_service.generate_candidate_traffic_light,
-                    request_text=payload.request_text,
+                    request_text=request_text,
                     candidate_prj_exp=candidate_prj_exp,
                     candidate_id=str(candidate_id),
                     candidate_name=name,
@@ -555,7 +616,7 @@ async def _collect_traffic_light_candidates(
 async def svetofor(payload: SearchRequest):
     request_text = payload.request_text or ""
     trace_step(_log, "workflow", "svetofor.start", request_preview=(request_text or "")[:300])
-    area_id = payload.area_id or settings.area_id
+    area_ids = payload.area_ids or [113, 16]
 
     top_x = max(1, int(payload.candidates_limit))
     search_payload = payload.model_copy(update={"candidates_limit": top_x})
@@ -572,14 +633,14 @@ async def svetofor(payload: SearchRequest):
         hh_finished_at,
         total_iterations,
         prompt_restarts,
-    ) = _run_search_with_restarts(payload=search_payload, request_text=request_text, area_id=area_id)
+    ) = _run_search_with_restarts(payload=search_payload, request_text=request_text, area_ids=area_ids)
 
     hh = HHSearchService(token_url=settings.hh_token_url, token_source=settings.token_source)
     candidates_by_level = _normalize_candidates_by_level({"main": candidates_raw or []})
     selected_list = candidates_by_level.get("main", []) or []
     candidates_for_tl = selected_list[:top_x]
 
-    scored_candidates = await _collect_traffic_light_candidates(hh, payload, candidates_for_tl)
+    scored_candidates = await _collect_traffic_light_candidates(hh, request_text, candidates_for_tl)
     traffic_light_candidates = sorted(scored_candidates, key=lambda x: x.color_score_percent, reverse=True)[:top_x]
 
     scored_ids = {str(item.id) for item in traffic_light_candidates}
@@ -596,7 +657,6 @@ async def svetofor(payload: SearchRequest):
         bool_finished_at=bool_finished_at,
         hh_finished_at=hh_finished_at,
         finished_at=finished_at,
-        final_boolean_query=final_boolean_query,
         final_search_url=final_search_url,
         stage_attempts=stage_attempts,  # type: ignore[arg-type]
         total_iterations=total_iterations,
@@ -608,61 +668,75 @@ async def svetofor(payload: SearchRequest):
 @router.post("/traffic_light", response_model=TrafficLightFromCandidatesResponse, response_model_exclude_none=True)
 async def traffic_light_from_candidates(payload: TrafficLightFromCandidatesRequest):
     """
-    Светофор по уже найденным кандидатам (без LLM-генерации булевых запросов и без поиска HH).
-
-    Важно: сервер всё равно догружает детали резюме по id (HH API), чтобы собрать проектный опыт,
-    и затем вызывает LLM только для оценки соответствия (ColorScore).
+    Этап 2: светофор по выбранным candidate_ids.
+    request_text и резюме берутся из сессии этапа 1.
     """
     trace_step(
         _log,
         "workflow",
         "traffic_light_from_candidates.start",
-        incoming_candidates=len(payload.candidates or []),
+        session_id=payload.session_id,
+        candidate_ids=len(payload.candidate_ids or []),
     )
-    token_source = settings.token_source
-    hh = HHSearchService(
-        token_url=settings.hh_token_url,
-        token_source=token_source,
-    )
+    try:
+        session = require_session(payload.session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="session not found") from None
 
-    top_x = max(1, len(payload.candidates or []))
+    ids = [str(x) for x in payload.candidate_ids]
+    _validate_session_candidate_ids(session, ids)
 
+    hh = HHSearchService(token_url=settings.hh_token_url, token_source=settings.token_source)
     candidates_for_tl: list[dict[str, Any]] = []
-    for c in (payload.candidates or [])[:top_x]:
-        # Pydantic model -> dict with all fields (including first/last name).
-        candidates_for_tl.append(c.model_dump())
+    for cid in ids:
+        resume_json = _load_resume_json(cid)
+        if not resume_json:
+            raise HTTPException(status_code=400, detail=f"resume not found for id={cid}")
+        item = dict(resume_json)
+        item["id"] = cid
+        candidates_for_tl.append(item)
 
-    # Переиспользуем существующую логику, которая ожидает SearchRequest для светофора.
-    search_like = SearchRequest(request_text=payload.request_text, candidates_limit=len(candidates_for_tl) or 1)
-
-    scored_candidates = await _collect_traffic_light_candidates(hh, search_like, candidates_for_tl)
+    scored_candidates = await _collect_traffic_light_candidates(hh, session.request_text, candidates_for_tl)
     traffic_light_candidates = sorted(
         _merge_traffic_light_with_source_candidates(candidates_for_tl, scored_candidates),
         key=lambda x: x.color_score_percent,
         reverse=True,
     )
-    trace_step(_log, "workflow", "traffic_light_from_candidates.done", n=len(traffic_light_candidates))
+    items = [_traffic_light_item_from_candidate(tl) for tl in traffic_light_candidates]
+    trace_step(_log, "workflow", "traffic_light_from_candidates.done", n=len(items))
 
-    return TrafficLightFromCandidatesResponse(traffic_light_candidates=traffic_light_candidates)  # type: ignore[arg-type]
+    return TrafficLightFromCandidatesResponse(session_id=session.session_id, candidates=items)  # type: ignore[arg-type]
 
 
 @router.post("/contacts", response_model=ContactsResponse, response_model_exclude_none=True)
 async def open_contacts(payload: ContactsRequest):
     """
-    Платное открытие контактов для выбранных кандидатов.
-    Для каждого id вызывается HH API с with_contact=true (списание контакта).
+    Этап 3: платное открытие контактов для candidate_ids из сессии.
     """
-    trace_step(_log, "workflow", "open_contacts.start", candidates=len(payload.candidates or []))
-    token_source = settings.token_source
-    hh = HHSearchService(token_url=settings.hh_token_url, token_source=token_source)
+    trace_step(
+        _log,
+        "workflow",
+        "open_contacts.start",
+        session_id=payload.session_id,
+        candidate_ids=len(payload.candidate_ids or []),
+    )
+    try:
+        session = require_session(payload.session_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="session not found") from None
+
+    ids = [str(x) for x in payload.candidate_ids]
+    _validate_session_candidate_ids(session, ids)
+
+    hh = HHSearchService(token_url=settings.hh_token_url, token_source=settings.token_source)
     import asyncio
 
     semaphore = asyncio.Semaphore(6)
 
-    async def process_one(cand: dict[str, Any]) -> CandidateContact:
+    async def process_one(cid: str) -> CandidateContact:
         async with semaphore:
-            cid = str(cand.get("id") or "")
-            name = _candidate_name(cand) or cid or "-"
+            resume_json = _load_resume_json(cid) or {}
+            name = _candidate_name(resume_json) or cid or "-"
             if not cid:
                 return CandidateContact(id="", candidate_name=name, error="missing id")
             resume_data = await asyncio.to_thread(hh.hh.get_resume_by_id, cid, with_contacts=True)
@@ -677,8 +751,7 @@ async def open_contacts(payload: ContactsRequest):
                 contacts=raw,
             )
 
-    candidates_for_processing: list[dict[str, Any]] = [c.model_dump() for c in (payload.candidates or [])]
-    results = await asyncio.gather(*(process_one(c) for c in candidates_for_processing))
+    results = await asyncio.gather(*(process_one(cid) for cid in ids))
     trace_step(_log, "workflow", "open_contacts.done", count=len(results))
-    return ContactsResponse(contacts=list(results))
+    return ContactsResponse(session_id=session.session_id, contacts=list(results))
 

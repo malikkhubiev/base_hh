@@ -126,7 +126,7 @@ postgresql://USER:PASSWORD@HOST:PORT/DBNAME
 | `prompt_override` | string? | Промпт для LLM |
 | `query_override` | string? | Готовый булевый запрос (LLM пропускается) |
 
-**Выход:** `query`, `found_count`, `candidates[]`, `final_boolean_query`, `final_search_url`, `stage_attempts[]`, `total_iterations`, `prompt_restarts`, тайминги (`started_at`, `bool_finished_at`, `hh_finished_at`, `finished_at`), `llm_raw`.
+**Выход:** `session_id`, `query`, `found_count`, `candidates[]`, `final_search_url`, `stage_attempts[]`, `total_iterations`, `prompt_restarts`, тайминги (`started_at`, `bool_finished_at`, `hh_finished_at`, `finished_at`), `llm_raw`.
 
 `candidates_limit` — **минимум** для итераций ослабления запроса; в ответе до **N×3** кандидатов.
 

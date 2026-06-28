@@ -24,10 +24,12 @@ def main() -> int:
         return 1
 
     from app.core.resume_store import get_resume_store, persist_scored_resume
+    from app.core.workflow_session import ensure_session_schema, create_session, get_session
 
     store = get_resume_store()
-    print("Подключение OK, применяю схему resume_cache...")
+    print("Подключение OK, применяю схему resume_cache и workflow_sessions...")
     store.ensure_schema()
+    ensure_session_schema()
 
     sample = {
         "id": TEST_RESUME_ID,
@@ -44,11 +46,25 @@ def main() -> int:
 
     import psycopg
 
+    print("OK: resume_cache — запись, чтение и upsert работают.")
+
+    session = create_session(
+        request_text="Postgres verify session",
+        area_ids=[113, 16],
+        candidates_limit=10,
+        candidate_ids=[TEST_RESUME_ID],
+    )
+    loaded_session = get_session(session.session_id)
+    if loaded_session is None or loaded_session.request_text != "Postgres verify session":
+        print("ERROR: workflow_sessions — сессия не прочиталась из Postgres")
+        return 1
+
     with psycopg.connect(dsn, autocommit=True) as conn:
         with conn.cursor() as cur:
+            cur.execute("DELETE FROM workflow_sessions WHERE session_id = %s", (session.session_id,))
             cur.execute("DELETE FROM resume_cache WHERE resume_id = %s", (TEST_RESUME_ID,))
 
-    print("OK: resume_cache — запись, чтение и upsert работают.")
+    print("OK: workflow_sessions — запись и чтение работают.")
     return 0
 
 

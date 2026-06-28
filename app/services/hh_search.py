@@ -35,20 +35,22 @@ class HHSearchService:
         self,
         *,
         source_text: str,
-        area_id: int | None,
+        area_ids: list[int] | None,
     ) -> dict[str, Any]:
         trace_step(
             logger,
             "hh_search",
             "_build_search_filters",
-            area_id=area_id,
+            area_ids=area_ids,
             managerial=self._is_managerial_position(source_text),
         )
 
-        # Важно: параметр `title` в веб-URL и в API-выдаче HH даёт "плохие" ссылки
-        # (и искажает `Перейти/Копировать` в UI). Поэтому не используем `title` вообще.
+        areas = [str(a) for a in (area_ids or [113, 16]) if a is not None]
+        if not areas:
+            areas = ["113", "16"]
+
         return {
-            "area": str(area_id) if area_id else ["113"],
+            "area": areas,
             "age_to": ["45"],
             "job_search_status": ["unknown", "active_search", "looking_for_offers"],
             "experience": ["between3And6", "moreThan6"],
@@ -62,7 +64,7 @@ class HHSearchService:
         search_plan: list[tuple[str, str]] | None = None,
         search_plan_meta: list[dict[str, Any]] | None = None,
         source_text: str,
-        area_id: int | None,
+        area_ids: list[int] | None,
         per_page: int = 20,
         min_needed: int | None = None,
     ) -> tuple[
@@ -91,7 +93,7 @@ class HHSearchService:
         )
         filters = self._build_search_filters(
             source_text=source_text,
-            area_id=area_id,
+            area_ids=area_ids,
         )
 
         if search_plan:

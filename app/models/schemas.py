@@ -78,31 +78,43 @@ class SearchStageAttempt(BaseModel):
 class SearchRequest(BaseModel):
     request_text: str = Field(
         default="",
-        description="Текст вакансии/требований; для LLM и контекста HH. При queries_override может быть пустым.",
+        description="Квалификационные требования для LLM и светофора.",
     )
-    candidates_limit: int = Field(10, ge=1, le=200, description="Необходимое кол-во кандидатов; поиск идёт до N×3 с одного булевого запроса")
-
-    area_id: int | None = None
+    candidates_limit: int = Field(
+        10,
+        ge=1,
+        le=200,
+        description="Требуется кандидатов; поиск идёт до N×3 с одного булевого запроса",
+    )
+    area_ids: list[int] = Field(
+        default_factory=lambda: [113, 16],
+        description="Регионы HH (по умолчанию Россия 113 и Беларусь 16).",
+    )
     prompt_override: str | None = Field(
         None,
-        description="Если задано, используем этот текст промпта вместо system+user шаблонов. Можно использовать {vac_reqs}.",
+        description="Если задано, используем этот текст промпта вместо system+user шаблонов.",
     )
     query_override: str | None = Field(
         None,
         description="Готовый булевый запрос; если задано, шаг генерации через LLM пропускается.",
     )
 
-    # NOTE: job_stability and svetofor_top_x are removed per task.txt.
+
+class RawResumeCandidate(BaseModel):
+    id: str
+    resume_json: dict[str, Any] = Field(description="Сырой JSON полного резюме HH (без контактов).")
+
+
 class SearchResponse(BaseModel):
+    session_id: str
     llm_raw: Any | None = None
     query: str = ""
     found_count: int = 0
-    candidates: list[Candidate] = Field(default_factory=list)
+    candidates: list[RawResumeCandidate] = Field(default_factory=list)
     started_at: datetime | None = None
     bool_finished_at: datetime | None = None
     hh_finished_at: datetime | None = None
     finished_at: datetime | None = None
-    final_boolean_query: str | None = None
     final_search_url: str | None = None
     stage_attempts: list[SearchStageAttempt] = Field(default_factory=list)
     total_iterations: int = 0
@@ -118,7 +130,6 @@ class SvetoforResponse(BaseModel):
     bool_finished_at: datetime | None = None
     hh_finished_at: datetime | None = None
     finished_at: datetime | None = None
-    final_boolean_query: str | None = None
     final_search_url: str | None = None
     stage_attempts: list[SearchStageAttempt] = Field(default_factory=list)
     total_iterations: int = 0
@@ -155,23 +166,32 @@ class TrafficLightCandidate(BaseModel):
 
 
 class TrafficLightFromCandidatesRequest(BaseModel):
-    """
-    Запрос для расчёта "Светофора" без повторного запуска булевых запросов и поиска в HH.
-    UI передаёт уже найденных кандидатов (по уровню), а сервер догружает резюме по id и считает ColorScore.
-    """
-
-    request_text: str = Field(description="Текст вакансии/требований для LLM")
-    candidates: list[Candidate] = Field(default_factory=list, description="Кандидаты, уже найденные в поиске")
+    session_id: str = Field(description="Сессия этапа 1 (request_text и резюме на бэкенде)")
+    candidate_ids: list[str] = Field(default_factory=list, description="ID выбранных кандидатов")
 
     @model_validator(mode="after")
-    def _require_text(self) -> Self:
-        if not (self.request_text or "").strip():
-            raise ValueError("request_text is required")
+    def _require_ids(self) -> Self:
+        if not self.candidate_ids:
+            raise ValueError("candidate_ids is required")
+        if not (self.session_id or "").strip():
+            raise ValueError("session_id is required")
         return self
 
 
+class TrafficLightResultItem(BaseModel):
+    id: str
+    candidate_name: str | None = None
+    title: str | None = None
+    location: str | None = None
+    color_score_percent: int = Field(ge=0, le=100, default=0)
+    requirements: list[TrafficLightRequirement] = Field(default_factory=list)
+    llm_raw: Any | None = None
+    prompt: str | None = None
+
+
 class TrafficLightFromCandidatesResponse(BaseModel):
-    traffic_light_candidates: list[TrafficLightCandidate]
+    session_id: str
+    candidates: list[TrafficLightResultItem] = Field(default_factory=list)
 
 
 class CandidateContact(BaseModel):
@@ -184,15 +204,19 @@ class CandidateContact(BaseModel):
 
 
 class ContactsRequest(BaseModel):
-    candidates: list[Candidate] = Field(default_factory=list, description="Выбранные кандидаты для платного открытия контактов")
+    session_id: str = Field(description="Сессия этапа 1")
+    candidate_ids: list[str] = Field(default_factory=list, description="ID выбранных кандидатов для открытия контактов")
 
     @model_validator(mode="after")
-    def _require_candidates(self) -> Self:
-        if not self.candidates:
-            raise ValueError("candidates is required")
+    def _require_ids(self) -> Self:
+        if not self.candidate_ids:
+            raise ValueError("candidate_ids is required")
+        if not (self.session_id or "").strip():
+            raise ValueError("session_id is required")
         return self
 
 
 class ContactsResponse(BaseModel):
+    session_id: str
     contacts: list[CandidateContact]
 

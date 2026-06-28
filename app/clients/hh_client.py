@@ -254,7 +254,7 @@ class HHClient:
             return None
 
     def _fetch_resume_with_contacts(self, resume_id: str) -> dict[str, Any] | None:
-        """Платное открытие контактов: GET по URL из actions.get_with_contact или ?with_contact=true."""
+        """Платное открытие контактов: GET по URL из actions.get_with_contact.url (токен with_contact)."""
         trace_step(logger, "hh_client", "get_resume_with_contacts.enter", resume_id=resume_id)
         if not self.token:
             self.get_token()

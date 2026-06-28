@@ -80,21 +80,31 @@ class PostgresResumeStore:
                 )
 
 
-class NoopResumeStore:
+class InMemoryResumeStore:
+    """Кэш резюме в памяти процесса, если DATABASE_URL не задан."""
+
+    def __init__(self) -> None:
+        self._data: dict[str, dict[str, Any]] = {}
+
     def ensure_schema(self) -> None:
         return None
 
     def get_resume_json(self, *, resume_id: str) -> dict[str, Any] | None:
-        return None
+        data = self._data.get(str(resume_id))
+        return data if isinstance(data, dict) and data else None
 
     def save_resume_json(self, *, resume_id: str, resume_json: dict[str, Any]) -> None:
-        return None
+        if resume_id and isinstance(resume_json, dict) and resume_json:
+            self._data[str(resume_id)] = resume_json
+
+
+_memory_resume_store = InMemoryResumeStore()
 
 
 def get_resume_store() -> ResumeStore:
     dsn = (settings.database_url or "").strip()
     if not dsn:
-        return NoopResumeStore()
+        return _memory_resume_store
     return PostgresResumeStore(config=PostgresResumeStoreConfig(dsn=dsn))
 
 

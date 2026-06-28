@@ -233,7 +233,7 @@ def index() -> str:
         <div class="stack" style="flex:2; min-width:260px;">
           <div class="row">
             <button class="secondary" id="btnDefault">Запрос по умолчанию</button>
-            <button class="secondary" id="btnBool">Получить булевый запрос</button>
+            <button class="secondary" id="btnBool">Далее</button>
             <button id="btnSearch">Поиск</button>
           </div>
         </div>
@@ -242,6 +242,14 @@ def index() -> str:
             <label class="pill">
               Количество кандидатов
               <input type="number" id="candLimit" value="10" min="1" max="200" />
+            </label>
+            <label class="pill">
+              <input type="checkbox" id="area113" checked />
+              Россия (113)
+            </label>
+            <label class="pill">
+              <input type="checkbox" id="area16" checked />
+              Беларусь (16)
             </label>
           </div>
         </div>
@@ -273,13 +281,20 @@ def index() -> str:
             <table>
               <thead>
                 <tr>
+                  <th>✓</th>
+                  <th>ColorScore</th>
                   <th>Кандидат</th>
                   <th>Локация</th>
                   <th>Позиция</th>
+                  <th>Телефон</th>
+                  <th>Email</th>
                 </tr>
               </thead>
               <tbody id="tlTbody"></tbody>
             </table>
+          </div>
+          <div class="row" style="justify-content:flex-end; margin-top:12px; gap:10px;">
+            <button id="btnAddContacts" type="button" disabled>Добавить</button>
           </div>
         </div>
       </div>
@@ -386,12 +401,14 @@ def index() -> str:
     boolFinishedAt: null,
     hhFinishedAt: null,
     finishedAt: null,
-    finalBooleanQuery: "",
     stageAttempts: [],
     totalIterations: 0,
     promptRestarts: 0,
     selectedCandidateIds: new Set(),
+    selectedTrafficLightIds: new Set(),
     contactsById: {},
+    sessionId: null,
+    finalSearchUrl: null,
   };
 
   function setStatus(text) { el("status").textContent = text || ""; }
@@ -401,11 +418,22 @@ def index() -> str:
     el("btnSearch").disabled = b;
     const candT = el("candLimit");
     if (candT) candT.disabled = b;
-    const extraIds = ["btnScreening"];
+    ["area113", "area16"].forEach((id) => {
+      const t = el(id);
+      if (t) t.disabled = b;
+    });
+    const extraIds = ["btnScreening", "btnAddContacts"];
     extraIds.forEach((id) => {
       const t = el(id);
       if (t) t.disabled = b;
     });
+  }
+
+  function getAreaIds() {
+    const ids = [];
+    if (el("area113")?.checked) ids.push(113);
+    if (el("area16")?.checked) ids.push(16);
+    return ids.length ? ids : [113, 16];
   }
 
   function getCandidatesLimit() {
@@ -447,6 +475,50 @@ def index() -> str:
     );
   }
 
+  function extractSkillsFromResume(r) {
+    const skillSet = Array.isArray(r?.skill_set) ? r.skill_set : [];
+    const names = skillSet.map((s) => s?.name).filter(Boolean);
+    if (names.length) return names;
+    if (Array.isArray(r?.skills)) return r.skills.map(String).filter(Boolean);
+    return [];
+  }
+
+  function normalizeExperienceFromResume(r) {
+    const exp = r?.experience;
+    return Array.isArray(exp) ? exp : [];
+  }
+
+  function candidateFromApiItem(item) {
+    const resume = item?.resume_json && typeof item.resume_json === "object" ? item.resume_json : {};
+    const id = String(item?.id || resume?.id || "");
+    return {
+      id,
+      resume_json: resume,
+      first_name: resume.first_name,
+      last_name: resume.last_name,
+      title: resume.title,
+      age: resume.age,
+      area: resume.area,
+      salary: resume.salary,
+      skills: extractSkillsFromResume(resume),
+      skills_text: typeof resume.skills === "string" ? resume.skills : null,
+      education: Array.isArray(resume.education) ? resume.education : [],
+      experience_full: normalizeExperienceFromResume(resume),
+    };
+  }
+
+  function tlItemToModalCandidate(c) {
+    return {
+      id: c?.id,
+      candidate_name: c?.candidate_name,
+      title: c?.title,
+      location: c?.location,
+      color_score_percent: c?.color_score_percent,
+      requirements: c?.requirements,
+      debug_prompt: c?.prompt,
+      debug_llm_raw: c?.llm_raw,
+    };
+  }
   function formatSalary(c) {
     const s = c?.salary;
     if (!s) return "";
@@ -462,11 +534,24 @@ def index() -> str:
   function updateSelectionButtons() {
     const btnScreening = el("btnScreening");
     if (btnScreening) btnScreening.disabled = state.selectedCandidateIds.size <= 0;
+    const btnAddContacts = el("btnAddContacts");
+    if (btnAddContacts) btnAddContacts.disabled = state.selectedTrafficLightIds.size <= 0;
   }
 
-  function hasContactsForId(id) {
-    const c = state.contactsById?.[id];
-    return !!(c && !c.error && (c.phone || c.email || (Array.isArray(c.contacts) && c.contacts.length)));
+  function formatContactItem(item) {
+    if (!item || typeof item !== "object") return "";
+    const typeName = item?.type?.name || item?.type?.id || "";
+    const kind = String(item?.kind || "").trim();
+    const label = typeName || kind || "контакт";
+    const preferred = item?.preferred ? " (предпочтительный)" : "";
+    const value = String(item?.contact_value || "").trim();
+    const comment = String(item?.comment || "").trim();
+    const parts = [`${label}${preferred}`];
+    if (value) parts.push(value);
+    if (comment) parts.push(`комментарий: ${comment}`);
+    if (item?.verified === true) parts.push("подтверждён");
+    if (item?.need_verification === true) parts.push("требует подтверждения");
+    return parts.join(" — ");
   }
 
   function openContactsModal(contactInfo) {
@@ -478,46 +563,67 @@ def index() -> str:
     const lines = [];
     if (contactInfo?.phone) lines.push(`Телефон: ${contactInfo.phone}`);
     if (contactInfo?.email) lines.push(`Email: ${contactInfo.email}`);
+    const raw = Array.isArray(contactInfo?.contacts) ? contactInfo.contacts : [];
+    raw.forEach((item) => {
+      const line = formatContactItem(item);
+      if (line) lines.push(line);
+    });
     if (contactInfo?.error) lines.push(`Ошибка: ${contactInfo.error}`);
     if (!lines.length) lines.push("Контакты не найдены");
     body.textContent = lines.join(NL);
     backdrop.style.display = "flex";
   }
 
-  el("contactsModalClose").onclick = () => { el("contactsModalBackdrop").style.display = "none"; };
-  el("contactsModalBackdrop").onclick = (e) => {
-    if (e?.target === el("contactsModalBackdrop")) el("contactsModalBackdrop").style.display = "none";
-  };
+  function contactCellHtml(contactInfo, field) {
+    if (field === "phone" && contactInfo?.error) {
+      return `<span class="mono" data-open-contacts="1" data-contact-id="${escapeHtml(String(contactInfo?.id || ""))}" style="cursor:pointer; color:#c00;">${escapeHtml(contactInfo.error)}</span>`;
+    }
+    const value = field === "phone" ? contactInfo?.phone : contactInfo?.email;
+    if (!value) return "—";
+    const id = String(contactInfo?.id || "");
+    return `<span class="mono" data-open-contacts="1" data-contact-id="${escapeHtml(id)}" style="cursor:pointer; color:#1e73ff; text-decoration:underline;">${escapeHtml(value)}</span>`;
+  }
 
-  async function handleTrafficLightContactsClick(candidateId, tlCandidate) {
-    if (hasContactsForId(candidateId)) {
-      openContactsModal(state.contactsById[candidateId]);
+  function wireContactCells(tr) {
+    tr.querySelectorAll("[data-open-contacts]").forEach((node) => {
+      node.onclick = (e) => {
+        e.stopPropagation();
+        const cid = String(node.getAttribute("data-contact-id") || "");
+        if (!cid || !state.contactsById[cid]) return;
+        openContactsModal(state.contactsById[cid]);
+      };
+    });
+  }
+
+  async function runAddContactsForSelected() {
+    if (!state.sessionId) {
+      setStatus("Сначала выполните поиск");
       return;
     }
-    const list = Array.isArray(state.candidates) ? state.candidates : [];
-    let cand = list.find((c) => String(c.id || "") === candidateId);
-    if (!cand) {
-      cand = {
-        id: candidateId,
-        title: tlCandidate?.title,
-        first_name: tlCandidate?.candidate_name,
-      };
+    const selectedIds = [...state.selectedTrafficLightIds];
+    if (!selectedIds.length) {
+      setStatus("Выберите кандидатов для открытия контактов");
+      return;
     }
     setBusy(true);
-    setStatus("Открытие контактов (платно)...");
+    setStatus(`Открытие контактов (платно): ${selectedIds.length} кандидатов...`);
     try {
-      const data = await api("/api/contacts", { candidates: [cand] });
+      const data = await api("/api/contacts", {
+        session_id: state.sessionId,
+        candidate_ids: selectedIds,
+      });
       const items = Array.isArray(data.contacts) ? data.contacts : [];
+      let ok = 0;
+      let failed = 0;
       items.forEach((it) => {
         const cid = String(it?.id ?? "");
-        if (cid) state.contactsById[cid] = it;
+        if (!cid) return;
+        state.contactsById[cid] = it;
+        if (it?.error) failed += 1;
+        else ok += 1;
       });
       renderTrafficLightTable(state.trafficLightCandidates);
-      if (hasContactsForId(candidateId)) {
-        openContactsModal(state.contactsById[candidateId]);
-      } else {
-        setStatus("Не удалось открыть контакты");
-      }
+      setStatus(`Контакты: успешно ${ok}, ошибок ${failed}.`);
     } catch (e) {
       setStatus("Ошибка: " + e.message);
     } finally {
@@ -525,16 +631,13 @@ def index() -> str:
     }
   }
 
-  function wireTrafficLightContactsButton(btn, candidateId, tlCandidate) {
-    if (!btn) return;
-    const opened = hasContactsForId(candidateId);
-    btn.textContent = opened ? "Посмотреть_контакты" : "Запросить_контакты";
-    btn.title = opened ? "Открыть контакты" : "Открыть контакты (платно)";
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      handleTrafficLightContactsClick(candidateId, tlCandidate);
-    };
-  }
+  const btnAddContacts = el("btnAddContacts");
+  if (btnAddContacts) btnAddContacts.onclick = async () => { await runAddContactsForSelected(); };
+
+  el("contactsModalClose").onclick = () => { el("contactsModalBackdrop").style.display = "none"; };
+  el("contactsModalBackdrop").onclick = (e) => {
+    if (e?.target === el("contactsModalBackdrop")) el("contactsModalBackdrop").style.display = "none";
+  };
 
   function openResumeModal(c) {
     const backdrop = el("resumeModalBackdrop");
@@ -635,6 +738,50 @@ def index() -> str:
     return "rgba(255,120,117,.3)";
   }
 
+  function buildTrafficLightRow(c) {
+    const id = String(c.id ?? "");
+    const score = Number(c.color_score_percent ?? 0);
+    const rectBg = tlColorForScore(score);
+    const circleBorder = score >= 60 ? "#0b8a3a" : (score >= 40 ? "#d9b000" : "#ff4d4d");
+    const candidateName = String(c.candidate_name || candidateNameOrId(c));
+    const location = c.location ?? "";
+    const position = candidatePosition(c);
+    const contactInfo = state.contactsById[id] || null;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>
+        <input type="checkbox" data-tl-select="1" ${state.selectedTrafficLightIds.has(id) ? "checked" : ""} ${id ? "" : "disabled"} />
+      </td>
+      <td>
+        <div class="tl-rect" style="background:${rectBg}; border-color:${circleBorder};" title="ColorScore">
+          <div class="mono" style="font-size:16px; line-height:1;">${escapeHtml(String(score))}%</div>
+        </div>
+      </td>
+      <td class="mono">${escapeHtml(candidateName)}</td>
+      <td>${escapeHtml(location)}</td>
+      <td>${escapeHtml(position)}</td>
+      <td>${contactCellHtml(contactInfo, "phone")}</td>
+      <td>${contactCellHtml(contactInfo, "email")}</td>
+    `;
+
+    const chk = tr.querySelector('input[data-tl-select="1"]');
+    if (chk) {
+      chk.onchange = () => {
+        if (!id) return;
+        if (chk.checked) state.selectedTrafficLightIds.add(id);
+        else state.selectedTrafficLightIds.delete(id);
+        updateSelectionButtons();
+      };
+    }
+
+    const rect = tr.querySelector(".tl-rect");
+    if (rect) rect.onclick = () => openTrafficLightModal(tlItemToModalCandidate(c), "table");
+
+    wireContactCells(tr);
+    return tr;
+  }
+
   function renderTrafficLightTable(items) {
     const block = el("trafficLightBlock");
     const titleEl = el("trafficLightTitle");
@@ -645,58 +792,15 @@ def index() -> str:
     const list = sortTrafficLightByScore(items);
     state.trafficLightCandidates = [...list];
     block.style.display = list.length ? "block" : "none";
-    if (titleEl) titleEl.textContent = "Светофор (ColorScore)";
+    if (titleEl) titleEl.textContent = "Светофор (ColorScore) — выберите кандидатов и нажмите «Добавить» для контактов (платно)";
 
     list.forEach((c) => {
       const id = String(c.id ?? "");
-      const score = Number(c.color_score_percent ?? 0);
-      const rectBg = tlColorForScore(score);
-      const circleBorder = score >= 60 ? "#0b8a3a" : (score >= 40 ? "#d9b000" : "#ff4d4d");
-      const resumeUrl = c.resume_url || c.resumeUrl || "";
-      const candidateName = candidateNameOrId(c);
-      const location = c.location ?? "";
-      const position = candidatePosition(c);
-
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>
-          <div style="display:flex; align-items:center; gap:12px;">
-            <div class="tl-rect" style="background:${rectBg}; border-color:${circleBorder};" title="ColorScore">
-              <div class="mono" style="font-size:16px; line-height:1;">${escapeHtml(String(score))}%</div>
-              <div style="width:18px; height:18px; border-radius:50%; border:2px solid ${circleBorder}; background:${rectBg};"></div>
-            </div>
-            <button
-              class="secondary"
-              type="button"
-              data-tl-contacts="1"
-              style="padding:8px 10px; font-size:12px; text-transform:none; letter-spacing:0; line-height:1; cursor:pointer;"
-            >
-              Показать контакты
-            </button>
-            ${resumeUrl ? `<span class="mono" data-open-resume="1" title="Открыть HH" style="color:#1e73ff; font-size:22px; cursor:pointer; line-height:1;">→</span>` : ""}
-            <span class="mono">${escapeHtml(candidateName)}</span>
-          </div>
-        </td>
-        <td>${escapeHtml(location)}</td>
-        <td>${escapeHtml(position)}</td>
-      `;
-
-      const rect = tr.querySelector(".tl-rect");
-      rect.onclick = () => openTrafficLightModal(c, "table");
-
-      const openResumeEl = tr.querySelector('[data-open-resume="1"]');
-      if (openResumeEl) {
-        openResumeEl.onclick = (e) => {
-          e.stopPropagation();
-          if (!resumeUrl) return;
-          window.open(resumeUrl, "_blank", "noopener,noreferrer");
-        };
-      }
-
-      wireTrafficLightContactsButton(tr.querySelector('[data-tl-contacts="1"]'), id, c);
+      const tr = buildTrafficLightRow(c);
       state.trafficLightById[id] = c;
       tbody.appendChild(tr);
     });
+    updateSelectionButtons();
   }
 
   function renderTrafficLightTableInto(levelName, items) {
@@ -713,54 +817,11 @@ def index() -> str:
 
     list.forEach((c) => {
       const id = String(c.id ?? "");
-      const score = Number(c.color_score_percent ?? 0);
-      const rectBg = tlColorForScore(score);
-      const circleBorder = score >= 60 ? "#0b8a3a" : (score >= 40 ? "#d9b000" : "#ff4d4d");
-      const resumeUrl = c.resume_url || c.resumeUrl || "";
-      const candidateName = candidateNameOrId(c);
-      const location = c.location ?? "";
-      const position = candidatePosition(c);
-
-      const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>
-          <div style="display:flex; align-items:center; gap:12px;">
-            <div class="tl-rect" style="background:${rectBg}; border-color:${circleBorder};" title="ColorScore">
-              <div class="mono" style="font-size:16px; line-height:1;">${escapeHtml(String(score))}%</div>
-              <div style="width:18px; height:18px; border-radius:50%; border:2px solid ${circleBorder}; background:${rectBg};"></div>
-            </div>
-            <button
-              class="secondary"
-              type="button"
-              data-tl-contacts="1"
-              style="padding:8px 10px; font-size:12px; text-transform:none; letter-spacing:0; line-height:1; cursor:pointer;"
-            >
-              Показать контакты
-            </button>
-            ${resumeUrl ? `<span class="mono" data-open-resume="1" title="Открыть HH" style="color:#1e73ff; font-size:22px; cursor:pointer; line-height:1;">→</span>` : ""}
-            <span class="mono">${escapeHtml(candidateName)}</span>
-          </div>
-        </td>
-        <td>${escapeHtml(location)}</td>
-        <td>${escapeHtml(position)}</td>
-      `;
-
-      const rect = tr.querySelector(".tl-rect");
-      rect.onclick = () => openTrafficLightModal(c, "table");
-
-      const openResumeEl = tr.querySelector('[data-open-resume="1"]');
-      if (openResumeEl) {
-        openResumeEl.onclick = (e) => {
-          e.stopPropagation();
-          if (!resumeUrl) return;
-          window.open(resumeUrl, "_blank", "noopener,noreferrer");
-        };
-      }
-
-      wireTrafficLightContactsButton(tr.querySelector('[data-tl-contacts="1"]'), id, c);
+      const tr = buildTrafficLightRow(c);
       state.trafficLightById[id] = c;
       tbody.appendChild(tr);
     });
+    updateSelectionButtons();
   }
 
   function showTlModalTab(tab) {
@@ -861,7 +922,7 @@ def index() -> str:
   function renderFinalQueryInfo() {
     const box = el("finalQueryInfo");
     if (!box) return;
-    const q = state.finalBooleanQuery || "";
+    const q = state.query || "";
     const attempts = Array.isArray(state.stageAttempts) ? state.stageAttempts : [];
     if (!q && !attempts.length) {
       box.style.display = "none";
@@ -928,7 +989,7 @@ def index() -> str:
       </div>
       <div class="param-group">
         <div class="param-title">Локация и период</div>
-        <div class="param-item">• area: 113 (или выбранный area_id)</div>
+        <div class="param-item">• area: ${escapeHtml(getAreaIds().join(", "))} (Россия 113, Беларусь 16)</div>
         <div class="param-item">• period/search_period: 0 (за всё время)</div>
       </div>
       <div class="param-group">
@@ -1020,7 +1081,7 @@ def index() -> str:
           </table>
         </div>
         <div class="row" style="justify-content:flex-end; margin-top:12px; gap:10px;">
-          <button id="btnScreening" type="button" disabled>Светофор</button>
+          <button id="btnScreening" type="button" disabled>Далее</button>
         </div>
       </div>
     `;
@@ -1070,27 +1131,33 @@ def index() -> str:
   }
 
   async function runTrafficLightForSelected() {
-    const requestText = el("requestText").value.trim();
+    if (!state.sessionId) {
+      setStatus("Сначала выполните поиск");
+      return;
+    }
     const list = Array.isArray(state.candidates) ? state.candidates : [];
-    const selected = list.filter((c) => state.selectedCandidateIds.has(String(c.id || "")));
-    if (!selected.length) {
+    const selectedIds = list
+      .filter((c) => state.selectedCandidateIds.has(String(c.id || "")))
+      .map((c) => String(c.id || ""));
+    if (!selectedIds.length) {
       setStatus("Выберите кандидатов для светофора");
       return;
     }
     setBusy(true);
-    setStatus(`Светофор: ${selected.length} кандидатов...`);
+    setStatus(`Светофор: ${selectedIds.length} кандидатов...`);
     try {
       const data = await api("/api/traffic_light", {
-        request_text: requestText,
-        candidates: selected,
+        session_id: state.sessionId,
+        candidate_ids: selectedIds,
       });
-      const tlItems = Array.isArray(data.traffic_light_candidates) ? data.traffic_light_candidates : [];
+      const tlItems = Array.isArray(data.candidates) ? data.candidates : [];
+      state.selectedTrafficLightIds = new Set();
       renderTrafficLightTable(tlItems);
       const tlBlock = el("trafficLightBlock");
       if (tlBlock) tlBlock.style.display = "block";
       setStatus("Готово.");
     } catch (e) {
-      setStatus("Ошибка: " + e.message);
+      setStatus("Ошибка светофора: " + e.message);
     } finally {
       setBusy(false);
     }
@@ -1207,29 +1274,32 @@ def index() -> str:
       const data = await api("/api/search", {
         request_text: requestText,
         candidates_limit: getCandidatesLimit(),
+        area_ids: getAreaIds(),
       });
       renderQueries(data.query, data.final_search_url);
-      const candidates = Array.isArray(data.candidates) ? data.candidates : [];
-      state.candidates = candidates;
+      state.sessionId = data.session_id || null;
+      state.finalSearchUrl = data.final_search_url || null;
+      state.candidates = (Array.isArray(data.candidates) ? data.candidates : []).map(candidateFromApiItem);
       state.foundCount = Number(data.found_count || 0);
       state.query = data.query || "";
       state.startedAt = data.started_at || null;
       state.boolFinishedAt = data.bool_finished_at || null;
       state.hhFinishedAt = data.hh_finished_at || null;
       state.finishedAt = data.finished_at || null;
-      state.finalBooleanQuery = data.final_boolean_query || "";
       state.stageAttempts = data.stage_attempts || [];
       state.totalIterations = Number(data.total_iterations || 0);
       state.promptRestarts = Number(data.prompt_restarts || 0);
       // reset traffic lights
       state.contactsById = {};
       state.selectedCandidateIds = new Set();
+      state.selectedTrafficLightIds = new Set();
 
       el("results").style.display = "block";
-      const totalShown = candidates.length;
+      const totalShown = state.candidates.length;
       const needN = getCandidatesLimit();
       const targetN = getSearchTargetCount();
-      el("pickedInfo").textContent = `Загружено резюме: ${totalShown} (цель поиска: ${targetN} = ${needN}×3, просмотр без контактов).`;
+      const sessionLabel = state.sessionId ? `session_id: ${state.sessionId}` : "";
+      el("pickedInfo").textContent = `Загружено резюме: ${totalShown} (цель: ${targetN} = ${needN}×3, без контактов). ${sessionLabel}`;
       const tabs = el("levelTabs");
       if (tabs) tabs.style.display = "none";
       renderActiveLevelTable();
