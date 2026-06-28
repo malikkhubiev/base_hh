@@ -44,14 +44,6 @@ uvicorn app.main:app --reload
 - ReDoc: http://127.0.0.1:8000/redoc  
 - OpenAPI JSON: http://127.0.0.1:8000/openapi.json  
 
-### Тесты
-
-```bash
-pytest
-```
-
-В тестах БД не поднимается: `SKIP_DB_INIT=1`, хранилище резюме подменяется in-memory (`tests/conftest.py`).
-
 ---
 
 ## База данных
@@ -211,12 +203,10 @@ app/
     request_query_planner.py  # Разбор требований → булевый запрос (LLM)
     query_generator.py    # Низкоуровневая генерация запросов
     traffic_light_service.py  # ColorScore (светофор)
-    general_requirements_service.py  # Проверка общих требований
     prompts.py            # Чтение txt-промптов
   utils/
     file_manager.py
 txt/                      # Промпты и дефолтный request_text
-tests/
 scripts/
   verify_postgres_resume_store.py  # smoke-тест записи в Postgres
 ```

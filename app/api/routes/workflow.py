@@ -8,7 +8,7 @@ from fastapi import APIRouter
 from fastapi import HTTPException
 from fastapi.responses import PlainTextResponse
 
-from app.core.resume_store import persist_scored_resume
+from app.core.resume_store import persist_scored_resume, persist_resume
 from app.core.settings import settings
 from app.core.tracing import trace_step
 from app.models.schemas import (
@@ -16,18 +16,18 @@ from app.models.schemas import (
     GenerateQueriesResponse,
     SearchRequest,
     SearchResponse,
-    ScreeningRequest,
-    ScreeningResponse,
     SvetoforResponse,
     TrafficLightCandidate,
     TrafficLightRequirement,
     TrafficLightFromCandidatesRequest,
     TrafficLightFromCandidatesResponse,
+    ContactsRequest,
+    ContactsResponse,
+    CandidateContact,
 )
 from app.services.hh_search import HHSearchService
 from app.services.prompts import PromptService
 from app.services.request_query_planner import RequestQueryPlanner
-from app.services.general_requirements_service import GeneralRequirementsService
 from app.services.traffic_light_service import TrafficLightService
 
 router = APIRouter()
@@ -103,6 +103,9 @@ def _normalize_candidates_by_level(candidates_by_level_raw: dict[str, list[dict[
                     "tags": it.get("tags") if isinstance(it.get("tags"), list) else [],
                     "first_name": it.get("first_name"),
                     "last_name": it.get("last_name"),
+                    "skills_text": it.get("skills_text"),
+                    "education": it.get("education") if isinstance(it.get("education"), list) else None,
+                    "contacts_opened": bool(it.get("contacts_opened")),
                 }
             )
         candidates_by_level[level] = norm
@@ -202,8 +205,117 @@ def _run_search_with_restarts(
     )
 
 
+def _extract_skills_from_resume(resume_data: dict[str, Any]) -> list[str]:
+    skill_set = resume_data.get("skill_set")
+    if isinstance(skill_set, list):
+        names = [str(s.get("name")).strip() for s in skill_set if isinstance(s, dict) and s.get("name")]
+        if names:
+            return names
+    skills = resume_data.get("skills")
+    if isinstance(skills, list):
+        return [str(s).strip() for s in skills if str(s).strip()]
+    return []
+
+
+def _resume_has_contacts(resume_data: dict[str, Any]) -> bool:
+    contact = resume_data.get("contact")
+    if not isinstance(contact, list):
+        return False
+    for item in contact:
+        if not isinstance(item, dict):
+            continue
+        value = item.get("value")
+        if isinstance(value, dict):
+            formatted = value.get("formatted") or value.get("number")
+            if formatted:
+                return True
+        elif value:
+            return True
+    return bool(resume_data.get("phone") or resume_data.get("email"))
+
+
+def _merge_candidate_with_full_resume(search_item: dict[str, Any], resume_data: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(search_item)
+    merged["experience_full"] = _normalize_full_experience(resume_data)
+    skills = _extract_skills_from_resume(resume_data)
+    if skills:
+        merged["skills"] = skills
+    skills_text = resume_data.get("skills")
+    if isinstance(skills_text, str) and skills_text.strip():
+        merged["skills_text"] = skills_text.strip()
+    education = resume_data.get("education")
+    if isinstance(education, list):
+        merged["education"] = [x for x in education if isinstance(x, dict)]
+    for key in ("first_name", "last_name", "title", "age", "area", "salary"):
+        val = resume_data.get(key)
+        if val is not None and val != "":
+            merged[key] = val
+    merged["contacts_opened"] = _resume_has_contacts(resume_data)
+    return merged
+
+
+def _extract_contacts_from_resume(resume_data: dict[str, Any]) -> tuple[str | None, str | None, list[dict[str, Any]]]:
+    phone: str | None = None
+    email: str | None = None
+    raw: list[dict[str, Any]] = []
+    contact = resume_data.get("contact")
+    if isinstance(contact, list):
+        for item in contact:
+            if not isinstance(item, dict):
+                continue
+            raw.append(item)
+            ctype = str(item.get("type") or "").lower()
+            value = item.get("value")
+            text = None
+            if isinstance(value, dict):
+                text = value.get("formatted") or value.get("number") or value.get("email")
+            elif value:
+                text = str(value)
+            if not text:
+                continue
+            if ctype == "email" and not email:
+                email = text
+            elif ctype in {"cell", "home", "work", "phone"} and not phone:
+                phone = text
+    if not phone and resume_data.get("phone"):
+        phone = str(resume_data.get("phone"))
+    if not email and resume_data.get("email"):
+        email = str(resume_data.get("email"))
+    return phone, email, raw
+
+
+async def _fetch_full_resumes_for_candidates(
+    hh: HHSearchService,
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Бесплатный просмотр полных резюме (без контактов) для всех кандидатов из поиска."""
+    import asyncio
+
+    trace_step(
+        _log,
+        "workflow",
+        "_fetch_full_resumes_for_candidates.start",
+        count=len(candidates),
+    )
+    semaphore = asyncio.Semaphore(10)
+
+    async def fetch_one(item: dict[str, Any]) -> dict[str, Any]:
+        async with semaphore:
+            cid = str(item.get("id") or "")
+            if not cid:
+                return item
+            resume_data = await asyncio.to_thread(hh.hh.get_resume_by_id, cid)
+            if isinstance(resume_data, dict) and resume_data:
+                return _merge_candidate_with_full_resume(item, resume_data)
+            return item
+
+    results = await asyncio.gather(*(fetch_one(c) for c in candidates))
+    trace_step(_log, "workflow", "_fetch_full_resumes_for_candidates.done", count=len(results))
+    return list(results)
+
+
 @router.post("/search", response_model=SearchResponse, response_model_exclude_none=True)
-def search(payload: SearchRequest):
+async def search(payload: SearchRequest):
     request_text = payload.request_text or ""
     trace_step(_log, "workflow", "search.start", area_id=payload.area_id, candidates_limit=payload.candidates_limit, request_preview=(request_text or "")[:300])
     area_id = payload.area_id or settings.area_id
@@ -223,10 +335,13 @@ def search(payload: SearchRequest):
         total_iterations,
         prompt_restarts,
     ) = _run_search_with_restarts(payload=payload, request_text=request_text, area_id=area_id)
-    finished_at = hh_finished_at
     trace_step(_log, "workflow", "search.hh_done", found_count=found_count, collected=len(candidates_raw or []))
 
-    candidates_by_level = _normalize_candidates_by_level({"main": candidates_raw or []})
+    hh = HHSearchService(token_url=settings.hh_token_url, token_source=settings.token_source)
+    enriched_raw = await _fetch_full_resumes_for_candidates(hh, candidates_raw or [])
+    resumes_finished_at = datetime.utcnow()
+
+    candidates_by_level = _normalize_candidates_by_level({"main": enriched_raw or []})
     candidates = candidates_by_level.get("main", []) or []
     return SearchResponse(
         llm_raw=llm_raw,
@@ -235,8 +350,8 @@ def search(payload: SearchRequest):
         candidates=candidates,  # type: ignore[arg-type]
         started_at=started_at,
         bool_finished_at=bool_finished_at,
-        hh_finished_at=hh_finished_at,
-        finished_at=finished_at,
+        hh_finished_at=resumes_finished_at,
+        finished_at=resumes_finished_at,
         final_boolean_query=final_boolean_query,
         final_search_url=final_search_url,
         stage_attempts=stage_attempts,  # type: ignore[arg-type]
@@ -311,70 +426,6 @@ def _normalize_full_experience(resume_data: dict[str, Any]) -> list[dict[str, An
                 "employer": it.get("employer"),
             }
         )
-    return out
-
-
-def _parse_llm_markdown_json_any(llm_raw: Any) -> Any | None:
-    """
-    LLM sometimes returns {'markdown': '```json ...```'} (or nested under {'response': ...}).
-    This helper removes code fences and parses JSON to a Python object.
-    """
-    import json
-    import re
-
-    response_obj = llm_raw.get("response", llm_raw) if isinstance(llm_raw, dict) else llm_raw
-    if isinstance(response_obj, dict):
-        markdown = response_obj.get("markdown")
-        if isinstance(markdown, (dict, list)):
-            return markdown
-        if isinstance(markdown, str):
-            response_obj = markdown
-        else:
-            return response_obj
-    if not isinstance(response_obj, str):
-        return None
-    txt = response_obj.strip()
-    txt = re.sub(r"^```[a-zA-Z]*\s*", "", txt)
-    txt = re.sub(r"```\s*$", "", txt)
-    # Extract JSON substring if surrounded by prose.
-    if not ((txt.startswith("{") and txt.endswith("}")) or (txt.startswith("[") and txt.endswith("]"))):
-        a = txt.find("[")
-        b = txt.rfind("]")
-        if a != -1 and b != -1 and b > a:
-            txt = txt[a : b + 1]
-        else:
-            a = txt.find("{")
-            b = txt.rfind("}")
-            if a != -1 and b != -1 and b > a:
-                txt = txt[a : b + 1]
-    try:
-        return json.loads(txt)
-    except Exception:
-        return None
-
-
-def _extract_general_requirements_checks(llm_json: Any) -> list[dict[str, Any]]:
-    """
-    Expected shape (from task.txt example): [[[ok, requirement, evidence], ...]].
-    We normalize to: [{'ok': bool, 'requirement': str, 'evidence': str}, ...]
-    """
-    out: list[dict[str, Any]] = []
-    root = llm_json
-    if isinstance(root, list) and len(root) == 1 and isinstance(root[0], list):
-        root = root[0]
-    if not isinstance(root, list):
-        return out
-    for it in root:
-        if isinstance(it, list) and len(it) >= 3:
-            ok = bool(it[0])
-            req = str(it[1] or "")
-            ev = str(it[2] or "")
-            out.append({"ok": ok, "requirement": req, "evidence": ev})
-        elif isinstance(it, dict):
-            ok = bool(it.get("ok") or it.get("true") or it.get("is_true"))
-            req = str(it.get("requirement") or it.get("check") or "")
-            ev = str(it.get("evidence") or it.get("resume_evidence") or it.get("comment") or "")
-            out.append({"ok": ok, "requirement": req, "evidence": ev})
     return out
 
 
@@ -585,90 +636,49 @@ async def traffic_light_from_candidates(payload: TrafficLightFromCandidatesReque
     search_like = SearchRequest(request_text=payload.request_text, candidates_limit=len(candidates_for_tl) or 1)
 
     scored_candidates = await _collect_traffic_light_candidates(hh, search_like, candidates_for_tl)
-    traffic_light_candidates = _merge_traffic_light_with_source_candidates(candidates_for_tl, scored_candidates)
+    traffic_light_candidates = sorted(
+        _merge_traffic_light_with_source_candidates(candidates_for_tl, scored_candidates),
+        key=lambda x: x.color_score_percent,
+        reverse=True,
+    )
     trace_step(_log, "workflow", "traffic_light_from_candidates.done", n=len(traffic_light_candidates))
 
     return TrafficLightFromCandidatesResponse(traffic_light_candidates=traffic_light_candidates)  # type: ignore[arg-type]
 
 
-@router.post("/screening", response_model=ScreeningResponse, response_model_exclude_none=True)
-async def screening(payload: ScreeningRequest):
+@router.post("/contacts", response_model=ContactsResponse, response_model_exclude_none=True)
+async def open_contacts(payload: ContactsRequest):
     """
-    Скрининг по выбранным кандидатам:
-    - параллельно запускает "Светофор" (ColorScore) и "Общие требования" (general_req_prompt.txt)
-    - резюме догружается по id (HH API) для извлечения проектного опыта
+    Платное открытие контактов для выбранных кандидатов.
+    Для каждого id вызывается HH API с with_contact=true (списание контакта).
     """
-    trace_step(
-        _log,
-        "workflow",
-        "screening.start",
-        candidates=len(payload.candidates or []),
-    )
+    trace_step(_log, "workflow", "open_contacts.start", candidates=len(payload.candidates or []))
     token_source = settings.token_source
-    hh = HHSearchService(
-        token_url=settings.hh_token_url,
-        token_source=token_source,
-    )
-    traffic_light_service = TrafficLightService()
-    general_req_service = GeneralRequirementsService()
-
+    hh = HHSearchService(token_url=settings.hh_token_url, token_source=token_source)
     import asyncio
 
     semaphore = asyncio.Semaphore(6)
 
-    async def process_one(cand: dict[str, Any]) -> tuple[TrafficLightCandidate, dict[str, Any]]:
+    async def process_one(cand: dict[str, Any]) -> CandidateContact:
         async with semaphore:
             cid = str(cand.get("id") or "")
-            name = _candidate_name(cand) or "-"
-            resume_data = await asyncio.to_thread(hh.hh.get_resume_by_id, cid)
-            if isinstance(resume_data, dict) and resume_data:
-                persist_scored_resume(resume_id=cid, resume_json=resume_data)
-            candidate_prj_exp = _extract_candidate_prj_exp(resume_data or {}) if isinstance(resume_data, dict) else ""
-            full_exp = _normalize_full_experience(resume_data or {}) if isinstance(resume_data, dict) else []
-
-            tl_task = asyncio.to_thread(
-                traffic_light_service.generate_candidate_traffic_light,
-                request_text=payload.request_text,
-                candidate_prj_exp=candidate_prj_exp,
-                candidate_id=cid,
+            name = _candidate_name(cand) or cid or "-"
+            if not cid:
+                return CandidateContact(id="", candidate_name=name, error="missing id")
+            resume_data = await asyncio.to_thread(hh.hh.get_resume_by_id, cid, with_contacts=True)
+            if not isinstance(resume_data, dict) or not resume_data:
+                return CandidateContact(id=cid, candidate_name=name, error="failed to open contacts")
+            phone, email, raw = _extract_contacts_from_resume(resume_data)
+            return CandidateContact(
+                id=cid,
                 candidate_name=name,
-                title=cand.get("title"),
-                location=(cand.get("area") or {}).get("name") if isinstance(cand.get("area"), dict) else None,
-                resume_url=cand.get("alternate_url") or cand.get("url"),
+                phone=phone,
+                email=email,
+                contacts=raw,
             )
-            gr_task = asyncio.to_thread(
-                general_req_service.generate_candidate_review,
-                cust_req_text=payload.general_requirements_text,
-                candidate_prj_exp=candidate_prj_exp,
-                candidate_id=cid,
-                candidate_name=name,
-            )
-            (tl_candidate, _), (review_text, prompt, llm_raw) = await asyncio.gather(tl_task, gr_task)
-            try:
-                tl_candidate = tl_candidate.model_copy(update={"experience_full": full_exp})
-            except Exception:
-                pass
-            llm_json = _parse_llm_markdown_json_any(llm_raw)
-            checks = _extract_general_requirements_checks(llm_json)
-            gr = {
-                "id": cid,
-                "candidate_name": name,
-                "review_text": review_text,
-                "checks": checks,
-                "debug_prompt": prompt,
-                "debug_llm_raw": llm_json,
-            }
-            return tl_candidate, gr
 
     candidates_for_processing: list[dict[str, Any]] = [c.model_dump() for c in (payload.candidates or [])]
     results = await asyncio.gather(*(process_one(c) for c in candidates_for_processing))
-    tl_candidates = [r[0] for r in results]
-    general_reqs = [r[1] for r in results]
-
-    trace_step(_log, "workflow", "screening.done", tl=len(tl_candidates), gr=len(general_reqs))
-    return ScreeningResponse(
-        traffic_light_candidates=tl_candidates,
-        general_requirements=general_reqs,  # type: ignore[arg-type]
-    )
-
+    trace_step(_log, "workflow", "open_contacts.done", count=len(results))
+    return ContactsResponse(contacts=list(results))
 

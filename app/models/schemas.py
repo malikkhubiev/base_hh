@@ -45,6 +45,18 @@ class Candidate(BaseModel):
     tags: list[Any] = Field(default_factory=list)
     first_name: str | None = None
     last_name: str | None = None
+    skills_text: str | None = Field(
+        default=None,
+        description="Текстовое описание навыков из полного резюме HH (поле skills).",
+    )
+    education: list[dict[str, Any]] | None = Field(
+        default=None,
+        description="Образование из полного резюме HH.",
+    )
+    contacts_opened: bool = Field(
+        default=False,
+        description="True если контакты уже открыты (платно) и доступны в кэше.",
+    )
 
 
 class AppliedRequirement(BaseModel):
@@ -68,7 +80,7 @@ class SearchRequest(BaseModel):
         default="",
         description="Текст вакансии/требований; для LLM и контекста HH. При queries_override может быть пустым.",
     )
-    candidates_limit: int = Field(20, ge=1, le=200, description="Минимум кандидатов: ищем до тех пор, пока не соберём минимум (в UI показываем до N*3)")
+    candidates_limit: int = Field(10, ge=1, le=200, description="Необходимое кол-во кандидатов; поиск идёт до N×3 с одного булевого запроса")
 
     area_id: int | None = None
     prompt_override: str | None = Field(
@@ -162,22 +174,17 @@ class TrafficLightFromCandidatesResponse(BaseModel):
     traffic_light_candidates: list[TrafficLightCandidate]
 
 
-class GeneralRequirementsCandidateResult(BaseModel):
+class CandidateContact(BaseModel):
     id: str
     candidate_name: str
-    review_text: str
-    checks: list[dict[str, Any]] | None = Field(
-        default=None,
-        description="Чистый JSON (после очистки markdown) со списком проверок: [ok(bool), requirement, evidence].",
-    )
-    debug_prompt: str | None = None
-    debug_llm_raw: Any | None = None
+    phone: str | None = None
+    email: str | None = None
+    contacts: list[dict[str, Any]] = Field(default_factory=list, description="Сырой массив contact[] из HH")
+    error: str | None = None
 
 
-class ScreeningRequest(BaseModel):
-    request_text: str = Field(description="Текст вакансии/требований (для светофора)")
-    general_requirements_text: str = Field(default="", description="Общие требования (вставляются в ${custReqText})")
-    candidates: list[Candidate] = Field(default_factory=list, description="Выбранные кандидаты из таблицы поиска")
+class ContactsRequest(BaseModel):
+    candidates: list[Candidate] = Field(default_factory=list, description="Выбранные кандидаты для платного открытия контактов")
 
     @model_validator(mode="after")
     def _require_candidates(self) -> Self:
@@ -186,9 +193,6 @@ class ScreeningRequest(BaseModel):
         return self
 
 
-class ScreeningResponse(BaseModel):
-    traffic_light_candidates: list[TrafficLightCandidate]
-    general_requirements: list[GeneralRequirementsCandidateResult]
-
-
+class ContactsResponse(BaseModel):
+    contacts: list[CandidateContact]
 

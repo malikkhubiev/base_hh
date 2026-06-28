@@ -3,7 +3,6 @@ uvicorn[standard]
 requests
 pydantic
 python-dotenv
-pytest
 pyyaml
 xlsxwriter
 psycopg[binary]

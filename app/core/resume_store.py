@@ -23,7 +23,7 @@ class PostgresResumeStoreConfig:
 
 
 class PostgresResumeStore:
-    """Хранит полные JSON резюме HH только после платного открытия в сценарии скоринга."""
+    """Хранит полные JSON резюме HH (бесплатный просмотр и/или с контактами)."""
 
     def __init__(self, *, config: PostgresResumeStoreConfig) -> None:
         self._dsn = config.dsn
@@ -98,11 +98,16 @@ def get_resume_store() -> ResumeStore:
     return PostgresResumeStore(config=PostgresResumeStoreConfig(dsn=dsn))
 
 
-def persist_scored_resume(*, resume_id: str, resume_json: dict[str, Any]) -> None:
-    """Сохраняет полное резюме после открытия в скоринге (traffic_light / screening / svetofor)."""
+def persist_resume(*, resume_id: str, resume_json: dict[str, Any]) -> None:
+    """Сохраняет полное JSON резюме HH в кэш (просмотр без контактов или с контактами)."""
     if not resume_id or not isinstance(resume_json, dict) or not resume_json:
         return
     try:
         get_resume_store().save_resume_json(resume_id=str(resume_id), resume_json=resume_json)
     except Exception:
-        logger.exception("Failed to persist scored resume id=%s", resume_id)
+        logger.exception("Failed to persist resume id=%s", resume_id)
+
+
+def persist_scored_resume(*, resume_id: str, resume_json: dict[str, Any]) -> None:
+    """Alias для обратной совместимости."""
+    persist_resume(resume_id=resume_id, resume_json=resume_json)

@@ -84,22 +84,22 @@ paths:
       responses:
         "200":
           description: Готово
-  /api/screening:
+  /api/contacts:
     post:
-      summary: Скрининг выбранных кандидатов (светофор + общие требования)
+      summary: Платное открытие контактов для выбранных кандидатов
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/ScreeningRequest"
+              $ref: "#/components/schemas/ContactsRequest"
       responses:
         "200":
           description: Готово
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ScreeningResponse"
+                $ref: "#/components/schemas/ContactsResponse"
 components:
   schemas:
     GenerateQueriesRequest:
@@ -126,7 +126,7 @@ components:
         request_text: { type: string }
         candidates_limit:
           type: integer
-          default: 20
+          default: 10
         area_id:
           type: integer
         prompt_override:
@@ -196,37 +196,30 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Candidate"
-    GeneralRequirementsCandidateResult:
+    ContactsRequest:
       type: object
+      required: [candidates]
       properties:
-        id: { type: string }
-        candidate_name: { type: string }
-        review_text: { type: string }
-        checks:
-          type: array
-          description: Чистый JSON со списком проверок (ok/requirement/evidence).
-          items:
-            type: object
-        debug_prompt: { type: string }
-        debug_llm_raw: {}
-    ScreeningRequest:
-      type: object
-      required: [request_text, candidates]
-      properties:
-        request_text: { type: string }
-        general_requirements_text: { type: string, default: "" }
         candidates:
           type: array
           items:
             $ref: "#/components/schemas/Candidate"
-    ScreeningResponse:
+    CandidateContact:
       type: object
       properties:
-        traffic_light_candidates:
+        id: { type: string }
+        candidate_name: { type: string }
+        phone: { type: string }
+        email: { type: string }
+        contacts:
           type: array
           items:
-            $ref: "#/components/schemas/TrafficLightCandidate"
-        general_requirements:
+            type: object
+        error: { type: string }
+    ContactsResponse:
+      type: object
+      properties:
+        contacts:
           type: array
           items:
-            $ref: "#/components/schemas/GeneralRequirementsCandidateResult"
+            $ref: "#/components/schemas/CandidateContact"

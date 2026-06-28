@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 from app.clients.hh_client import HHClient
@@ -76,8 +75,8 @@ class HHSearchService:
         """
         Returns (internally):
         - found_count
-        - candidates (up to per_page)
-        - final_query (last query attempted)
+        - candidates (up to min_needed * 3 from a single final boolean query)
+        - final_query (last successful query)
         - final_search_url (HH web url for last query)
         - stage_attempts (each attempt includes query_with_exclusion and web_url)
         """
@@ -100,23 +99,23 @@ class HHSearchService:
         else:
             ordered_pairs = [("Этап 1", query)]
 
-        collected: list[dict[str, Any]] = []
-        collected_ids: set[str] = set()
         last_query = ""
         last_web_url = ""
         last_count = 0
         stage_attempts: list[dict[str, Any]] = []
         min_needed_int = int(min_needed) if min_needed is not None else int(per_page)
         min_needed_int = max(1, min_needed_int)
-        display_limit = min(200, min_needed_int * 3)
-        fetch_per_page = max(display_limit, int(per_page))
+        target_count = min(200, min_needed_int * 3)
+        fetch_per_page = max(target_count, int(per_page))
+        main_items: list[dict[str, Any]] = []
+
         for idx, (stage_name, q) in enumerate(ordered_pairs):
             full_q = q if q is not None else ""
             last_query = full_q
             web_url = self.hh.build_web_search_url(query=full_q, filters=filters, per_page=fetch_per_page)
             last_web_url = web_url
 
-            count, items = self.hh.search(
+            count, items, _raw = self.hh.search(
                 query=full_q,
                 filters=filters,
                 per_page=fetch_per_page,
@@ -125,25 +124,17 @@ class HHSearchService:
             )
             last_count = int(count or 0)
             stage_items = items if isinstance(items, list) else []
-            stage_new = 0
-            for item in stage_items:
-                cid = str(item.get("id") or "")
-                if not cid or cid in collected_ids:
-                    continue
-                collected_ids.add(cid)
-                collected.append(item)
-                stage_new += 1
-                if len(collected) >= display_limit:
-                    break
+            stage_collected = len(stage_items)
+            main_items = stage_items[:target_count]
             stage_attempts.append(
                 {
                     "stage": stage_name,
                     "query": q,
                     "query_with_exclusion": full_q,
                     "found": last_count,
-                    "collected": len(collected),
-                    "target": min_needed_int,
-                    "enough": len(collected) >= min_needed_int,
+                    "collected": stage_collected,
+                    "target": target_count,
+                    "enough": stage_collected >= target_count,
                     "web_url": web_url,
                 }
             )
@@ -153,16 +144,19 @@ class HHSearchService:
                 "search_counts_and_candidates.level_done",
                 level=stage_name,
                 found=last_count,
-                items_returned=len(stage_items),
-                stage_new=stage_new,
-                collected=len(collected),
+                items_returned=stage_collected,
+                target=target_count,
             )
-            # Минимум набран — дальше не ослабляем; на текущем этапе уже добрали до display_limit.
-            if len(collected) >= min_needed_int:
+            if stage_collected >= target_count:
                 break
 
-        main_items = collected[:display_limit]
         final_count = last_count
-        trace_step(logger, "hh_search", "search_counts_and_candidates.complete", found_count=final_count, collected=len(main_items))
+        trace_step(
+            logger,
+            "hh_search",
+            "search_counts_and_candidates.complete",
+            found_count=final_count,
+            collected=len(main_items),
+            target=target_count,
+        )
         return final_count, main_items, last_query, last_web_url, stage_attempts
-

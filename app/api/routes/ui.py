@@ -224,11 +224,10 @@ def index() -> str:
     <div class="content">
       <div>
         <div class="subtitle">отладка workflow</div>
-        <div class="title">Поиск резюме (LLM → булевы → HH)</div>
+        <div class="title">Поиск резюме (LLM → булевы → HH → просмотр)</div>
       </div>
 
       <textarea id="requestText" placeholder="Вставьте запрос/требования..."></textarea>
-      <textarea id="generalReqText" class="prompt-editor" placeholder="Общие требования (для Скрининга)..." style="min-height:120px;"></textarea>
 
       <div class="row">
         <div class="stack" style="flex:2; min-width:260px;">
@@ -241,8 +240,8 @@ def index() -> str:
         <div class="stack" style="flex:3; min-width:260px;">
           <div class="row">
             <label class="pill">
-              Минимум кандидатов
-              <input type="number" id="candLimit" value="20" min="1" max="200" />
+              Количество кандидатов
+              <input type="number" id="candLimit" value="10" min="1" max="200" />
             </label>
           </div>
         </div>
@@ -287,6 +286,45 @@ def index() -> str:
     </div>
   </div>
 
+  <div id="resumeModalBackdrop" class="tl-modal-backdrop">
+    <div id="resumeModal" class="tl-modal">
+      <div class="row" style="justify-content:space-between; align-items:center; gap:14px;">
+        <div class="subtitle" id="resumeModalTitle"></div>
+        <button id="resumeModalClose" class="secondary" type="button">✕</button>
+      </div>
+      <div class="divider"></div>
+      <div id="resumeModalMeta" class="mono" style="font-size:14px; margin-bottom:12px;"></div>
+      <div class="card" style="margin-bottom:12px;">
+        <div class="label">Ключевые навыки</div>
+        <div id="resumeModalSkills" class="mono" style="font-size:14px; margin-top:8px;"></div>
+      </div>
+      <div class="card" style="margin-bottom:12px; display:none;" id="resumeModalSkillsTextWrap">
+        <div class="label">Описание навыков</div>
+        <pre id="resumeModalSkillsText" class="mono" style="white-space:pre-wrap; font-size:13px; margin-top:8px;"></pre>
+      </div>
+      <div class="card">
+        <div class="label">Опыт работы</div>
+        <div id="resumeModalExperience" style="margin-top:8px;"></div>
+      </div>
+      <div class="card" style="margin-top:12px; display:none;" id="resumeModalEducationWrap">
+        <div class="label">Образование</div>
+        <div id="resumeModalEducation" style="margin-top:8px;"></div>
+      </div>
+      <div class="subtitle" style="margin-top:12px; color:#666;">Контакты скрыты. Открыть можно после светофора.</div>
+    </div>
+  </div>
+
+  <div id="contactsModalBackdrop" class="tl-modal-backdrop">
+    <div id="contactsModal" class="tl-modal">
+      <div class="row" style="justify-content:space-between; align-items:center; gap:14px;">
+        <div class="subtitle" id="contactsModalTitle"></div>
+        <button id="contactsModalClose" class="secondary" type="button">✕</button>
+      </div>
+      <div class="divider"></div>
+      <div id="contactsModalBody" class="mono" style="font-size:15px; line-height:1.6;"></div>
+    </div>
+  </div>
+
   <div id="tlModalBackdrop" class="tl-modal-backdrop">
     <div id="tlModal" class="tl-modal">
       <div class="row" style="justify-content:space-between; align-items:center; gap:14px;">
@@ -303,44 +341,22 @@ def index() -> str:
       </div>
 
       <div id="tlModalTableWrap" style="overflow:auto; max-height:65vh;">
-        <div class="grid3" style="grid-template-columns: 1fr 1fr; gap:12px;">
-          <div class="card">
-            <div class="label">Светофор (ColorScore)</div>
-            <div style="overflow:auto; margin-top:8px;">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Требование</th>
-                    <th>Резюме</th>
-                    <th>Итог</th>
-                    <th>Несоответствие</th>
-                  </tr>
-                </thead>
-                <tbody id="tlModalTbody"></tbody>
-              </table>
-            </div>
-          </div>
-          <div class="card">
-            <div class="label">Общие требования (true/false)</div>
-            <div style="overflow:auto; margin-top:8px;">
-              <table>
-                <thead>
-                  <tr>
-                    <th>OK</th>
-                    <th>Проверка</th>
-                    <th>Доказательство</th>
-                  </tr>
-                </thead>
-                <tbody id="tlModalChecksTbody"></tbody>
-              </table>
-            </div>
+        <div class="card">
+          <div class="label">Светофор (ColorScore)</div>
+          <div style="overflow:auto; margin-top:8px;">
+            <table>
+              <thead>
+                <tr>
+                  <th>Требование</th>
+                  <th>Резюме</th>
+                  <th>Итог</th>
+                  <th>Несоответствие</th>
+                </tr>
+              </thead>
+              <tbody id="tlModalTbody"></tbody>
+            </table>
           </div>
         </div>
-      </div>
-
-      <div id="tlModalProjectExpWrap" class="llm" style="display:none; overflow:auto; max-height:65vh;">
-        <div class="subtitle" style="color:#000; margin-bottom:10px;">Проектный опыт (то, что подставляем в промпт)</div>
-        <pre id="tlModalProjectExpText" class="mono" style="white-space:pre-wrap; font-size:13px; margin:0;"></pre>
       </div>
 
       <div id="tlModalPromptWrap" class="llm" style="display:none; overflow:auto; max-height:65vh;">
@@ -375,7 +391,7 @@ def index() -> str:
     totalIterations: 0,
     promptRestarts: 0,
     selectedCandidateIds: new Set(),
-    screeningById: {},
+    contactsById: {},
   };
 
   function setStatus(text) { el("status").textContent = text || ""; }
@@ -394,10 +410,207 @@ def index() -> str:
 
   function getCandidatesLimit() {
     const t = el("candLimit");
-    const v = t ? Number(t.value) : 20;
-    if (!Number.isFinite(v) || v <= 0) return 20;
+    const v = t ? Number(t.value) : 10;
+    if (!Number.isFinite(v) || v <= 0) return 10;
     return Math.min(200, Math.max(1, v));
   }
+
+  function getSearchTargetCount() {
+    return Math.min(200, getCandidatesLimit() * 3);
+  }
+
+  function candidatePersonalName(c) {
+    return ((c?.last_name || "") + " " + (c?.first_name || "")).trim();
+  }
+
+  function candidateNameOrId(c) {
+    const personal = candidatePersonalName(c);
+    if (personal) return personal;
+    const id = String(c?.id ?? "");
+    const title = String(c?.title ?? "").trim();
+    const cn = String(c?.candidate_name ?? "").trim();
+    if (cn && cn !== title) return cn;
+    return id || "-";
+  }
+
+  function candidateDisplayName(c) {
+    return candidateNameOrId(c);
+  }
+
+  function candidatePosition(c) {
+    return String(c?.title || "").trim();
+  }
+
+  function sortTrafficLightByScore(items) {
+    return [...(Array.isArray(items) ? items : [])].sort(
+      (a, b) => Number(b?.color_score_percent ?? 0) - Number(a?.color_score_percent ?? 0)
+    );
+  }
+
+  function formatSalary(c) {
+    const s = c?.salary;
+    if (!s) return "";
+    if (typeof s === "object" && s.amount) return `${s.amount} ${s.currency || ""}`.trim();
+    try { return JSON.stringify(s); } catch (e) { return String(s); }
+  }
+
+  function formatSkills(c) {
+    const skills = Array.isArray(c?.skills) ? c.skills : [];
+    return skills.map((x) => (typeof x === "string" ? x : x?.name)).filter(Boolean).join(", ");
+  }
+
+  function updateSelectionButtons() {
+    const btnScreening = el("btnScreening");
+    if (btnScreening) btnScreening.disabled = state.selectedCandidateIds.size <= 0;
+  }
+
+  function hasContactsForId(id) {
+    const c = state.contactsById?.[id];
+    return !!(c && !c.error && (c.phone || c.email || (Array.isArray(c.contacts) && c.contacts.length)));
+  }
+
+  function openContactsModal(contactInfo) {
+    const backdrop = el("contactsModalBackdrop");
+    const title = el("contactsModalTitle");
+    const body = el("contactsModalBody");
+    if (!backdrop || !title || !body) return;
+    title.textContent = contactInfo?.candidate_name || contactInfo?.id || "Контакты";
+    const lines = [];
+    if (contactInfo?.phone) lines.push(`Телефон: ${contactInfo.phone}`);
+    if (contactInfo?.email) lines.push(`Email: ${contactInfo.email}`);
+    if (contactInfo?.error) lines.push(`Ошибка: ${contactInfo.error}`);
+    if (!lines.length) lines.push("Контакты не найдены");
+    body.textContent = lines.join(NL);
+    backdrop.style.display = "flex";
+  }
+
+  el("contactsModalClose").onclick = () => { el("contactsModalBackdrop").style.display = "none"; };
+  el("contactsModalBackdrop").onclick = (e) => {
+    if (e?.target === el("contactsModalBackdrop")) el("contactsModalBackdrop").style.display = "none";
+  };
+
+  async function handleTrafficLightContactsClick(candidateId, tlCandidate) {
+    if (hasContactsForId(candidateId)) {
+      openContactsModal(state.contactsById[candidateId]);
+      return;
+    }
+    const list = Array.isArray(state.candidates) ? state.candidates : [];
+    let cand = list.find((c) => String(c.id || "") === candidateId);
+    if (!cand) {
+      cand = {
+        id: candidateId,
+        title: tlCandidate?.title,
+        first_name: tlCandidate?.candidate_name,
+      };
+    }
+    setBusy(true);
+    setStatus("Открытие контактов (платно)...");
+    try {
+      const data = await api("/api/contacts", { candidates: [cand] });
+      const items = Array.isArray(data.contacts) ? data.contacts : [];
+      items.forEach((it) => {
+        const cid = String(it?.id ?? "");
+        if (cid) state.contactsById[cid] = it;
+      });
+      renderTrafficLightTable(state.trafficLightCandidates);
+      if (hasContactsForId(candidateId)) {
+        openContactsModal(state.contactsById[candidateId]);
+      } else {
+        setStatus("Не удалось открыть контакты");
+      }
+    } catch (e) {
+      setStatus("Ошибка: " + e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function wireTrafficLightContactsButton(btn, candidateId, tlCandidate) {
+    if (!btn) return;
+    const opened = hasContactsForId(candidateId);
+    btn.textContent = opened ? "Посмотреть_контакты" : "Запросить_контакты";
+    btn.title = opened ? "Открыть контакты" : "Открыть контакты (платно)";
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      handleTrafficLightContactsClick(candidateId, tlCandidate);
+    };
+  }
+
+  function openResumeModal(c) {
+    const backdrop = el("resumeModalBackdrop");
+    const title = el("resumeModalTitle");
+    const meta = el("resumeModalMeta");
+    const skillsEl = el("resumeModalSkills");
+    const skillsTextWrap = el("resumeModalSkillsTextWrap");
+    const skillsTextEl = el("resumeModalSkillsText");
+    const expWrap = el("resumeModalExperience");
+    const eduWrap = el("resumeModalEducationWrap");
+    const eduEl = el("resumeModalEducation");
+
+    const name = candidateDisplayName(c);
+    title.textContent = name;
+    const area = c?.area?.name || c?.area?.id || "";
+    const metaParts = [
+      c?.title ? `Позиция: ${c.title}` : "",
+      area ? `Локация: ${area}` : "",
+      c?.age ? `Возраст: ${c.age}` : "",
+      formatSalary(c) ? `ЗП: ${formatSalary(c)}` : "",
+    ].filter(Boolean);
+    meta.textContent = metaParts.join(" · ");
+
+    skillsEl.textContent = formatSkills(c) || "—";
+    const skillsText = String(c?.skills_text || "").trim();
+    if (skillsTextWrap && skillsTextEl) {
+      skillsTextWrap.style.display = skillsText ? "block" : "none";
+      skillsTextEl.textContent = skillsText;
+    }
+
+    const fullExp = Array.isArray(c?.experience_full) ? c.experience_full : [];
+    if (expWrap) {
+      expWrap.innerHTML = "";
+      if (!fullExp.length) {
+        expWrap.innerHTML = `<div class="mono" style="color:#666;">Опыт не загружен</div>`;
+      } else {
+        fullExp.forEach((it) => {
+          const block = document.createElement("div");
+          block.style.marginBottom = "14px";
+          block.style.paddingBottom = "12px";
+          block.style.borderBottom = "1px dashed #ccc";
+          const period = [it?.start, it?.end].filter(Boolean).join(" — ");
+          const header = [period, it?.company, it?.position].filter(Boolean).join(" | ");
+          const desc = String(it?.description || "").trim();
+          block.innerHTML = `
+            <div class="mono" style="font-weight:700; margin-bottom:6px;">${escapeHtml(header)}</div>
+            ${desc ? `<pre class="mono" style="white-space:pre-wrap; font-size:13px; margin:0;">${escapeHtml(desc)}</pre>` : ""}
+          `;
+          expWrap.appendChild(block);
+        });
+      }
+    }
+
+    const education = Array.isArray(c?.education) ? c.education : [];
+    if (eduWrap && eduEl) {
+      if (!education.length) {
+        eduWrap.style.display = "none";
+        eduEl.innerHTML = "";
+      } else {
+        eduWrap.style.display = "block";
+        eduEl.innerHTML = education.map((ed) => {
+          const nameEd = ed?.name || ed?.organization || "";
+          const result = ed?.result || ed?.specialty || "";
+          const year = ed?.year || "";
+          return `<div class="mono" style="margin-bottom:8px;">${escapeHtml([nameEd, result, year].filter(Boolean).join(" · "))}</div>`;
+        }).join("");
+      }
+    }
+
+    backdrop.style.display = "flex";
+  }
+
+  el("resumeModalClose").onclick = () => { el("resumeModalBackdrop").style.display = "none"; };
+  el("resumeModalBackdrop").onclick = (e) => {
+    if (e?.target === el("resumeModalBackdrop")) el("resumeModalBackdrop").style.display = "none";
+  };
 
   function getIntInput(id, def, minV, maxV) {
     const t = el(id);
@@ -406,7 +619,7 @@ def index() -> str:
     return Math.min(maxV, Math.max(minV, Math.trunc(v)));
   }
 
-  // svetofor_top_x removed: screening runs on selected candidates.
+  // Светофор запускается по выбранным кандидатам через /api/traffic_light.
 
   function tlColorForScore(score) {
     const s = Number(score ?? 0);
@@ -429,27 +642,20 @@ def index() -> str:
     state.trafficLightById = {};
     tbody.innerHTML = "";
 
-    const list = Array.isArray(items) ? items : [];
+    const list = sortTrafficLightByScore(items);
     state.trafficLightCandidates = [...list];
     block.style.display = list.length ? "block" : "none";
-    if (titleEl) titleEl.textContent = "Светофор (ColorScore) + Общие требования";
+    if (titleEl) titleEl.textContent = "Светофор (ColorScore)";
 
     list.forEach((c) => {
       const id = String(c.id ?? "");
       const score = Number(c.color_score_percent ?? 0);
-      const checks = state.screeningById?.[id]?.checks;
-      const checksList = Array.isArray(checks) ? checks : [];
-      const totalChecks = checksList.length;
-      const okChecks = checksList.filter((x) => !!x?.ok).length;
-      const checksOk = totalChecks > 0 && okChecks === totalChecks;
       const rectBg = tlColorForScore(score);
       const circleBorder = score >= 60 ? "#0b8a3a" : (score >= 40 ? "#d9b000" : "#ff4d4d");
-      const checksBorder = checksOk ? "#0b8a3a" : "#ff4d4d";
-      const checksBg = checksOk ? "#ddf8e7" : "rgba(255,120,117,.3)";
       const resumeUrl = c.resume_url || c.resumeUrl || "";
-      const candidateName = c.candidate_name ?? "";
+      const candidateName = candidateNameOrId(c);
       const location = c.location ?? "";
-      const position = c.title ?? "";
+      const position = candidatePosition(c);
 
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -459,20 +665,16 @@ def index() -> str:
               <div class="mono" style="font-size:16px; line-height:1;">${escapeHtml(String(score))}%</div>
               <div style="width:18px; height:18px; border-radius:50%; border:2px solid ${circleBorder}; background:${rectBg};"></div>
             </div>
-            <div class="tl-rect" style="background:${totalChecks ? checksBg : "#fff"}; border-color:${totalChecks ? checksBorder : "#000"};" title="Общие требования (true/total)">
-              <div class="mono" style="font-size:14px; line-height:1;">${totalChecks ? `${okChecks}/${totalChecks}` : "-"}</div>
-            </div>
             <button
               class="secondary"
               type="button"
-              data-open-prj-exp="1"
+              data-tl-contacts="1"
               style="padding:8px 10px; font-size:12px; text-transform:none; letter-spacing:0; line-height:1; cursor:pointer;"
-              title="Показать проектный опыт, который подставляется в промпт"
             >
-              Опыт
+              Показать контакты
             </button>
             ${resumeUrl ? `<span class="mono" data-open-resume="1" title="Открыть HH" style="color:#1e73ff; font-size:22px; cursor:pointer; line-height:1;">→</span>` : ""}
-            <span class="mono">${escapeHtml(candidateName || id)}</span>
+            <span class="mono">${escapeHtml(candidateName)}</span>
           </div>
         </td>
         <td>${escapeHtml(location)}</td>
@@ -491,13 +693,7 @@ def index() -> str:
         };
       }
 
-      const openPrjExpEl = tr.querySelector('[data-open-prj-exp="1"]');
-      if (openPrjExpEl) {
-        openPrjExpEl.onclick = (e) => {
-          e.stopPropagation();
-          openTrafficLightModal(c, "projectExp");
-        };
-      }
+      wireTrafficLightContactsButton(tr.querySelector('[data-tl-contacts="1"]'), id, c);
       state.trafficLightById[id] = c;
       tbody.appendChild(tr);
     });
@@ -512,7 +708,7 @@ def index() -> str:
     state.trafficLightById = {};
     tbody.innerHTML = "";
 
-    const list = Array.isArray(items) ? items : [];
+    const list = sortTrafficLightByScore(items);
     block.style.display = list.length ? "block" : "none";
 
     list.forEach((c) => {
@@ -521,9 +717,9 @@ def index() -> str:
       const rectBg = tlColorForScore(score);
       const circleBorder = score >= 60 ? "#0b8a3a" : (score >= 40 ? "#d9b000" : "#ff4d4d");
       const resumeUrl = c.resume_url || c.resumeUrl || "";
-      const candidateName = c.candidate_name ?? "";
+      const candidateName = candidateNameOrId(c);
       const location = c.location ?? "";
-      const position = c.title ?? "";
+      const position = candidatePosition(c);
 
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -536,14 +732,13 @@ def index() -> str:
             <button
               class="secondary"
               type="button"
-              data-open-prj-exp="1"
+              data-tl-contacts="1"
               style="padding:8px 10px; font-size:12px; text-transform:none; letter-spacing:0; line-height:1; cursor:pointer;"
-              title="Показать проектный опыт, который подставляется в промпт"
             >
-              Опыт
+              Показать контакты
             </button>
             ${resumeUrl ? `<span class="mono" data-open-resume="1" title="Открыть HH" style="color:#1e73ff; font-size:22px; cursor:pointer; line-height:1;">→</span>` : ""}
-            <span class="mono">${escapeHtml(candidateName || id)}</span>
+            <span class="mono">${escapeHtml(candidateName)}</span>
           </div>
         </td>
         <td>${escapeHtml(location)}</td>
@@ -562,13 +757,7 @@ def index() -> str:
         };
       }
 
-      const openPrjExpEl = tr.querySelector('[data-open-prj-exp="1"]');
-      if (openPrjExpEl) {
-        openPrjExpEl.onclick = (e) => {
-          e.stopPropagation();
-          openTrafficLightModal(c, "projectExp");
-        };
-      }
+      wireTrafficLightContactsButton(tr.querySelector('[data-tl-contacts="1"]'), id, c);
       state.trafficLightById[id] = c;
       tbody.appendChild(tr);
     });
@@ -576,12 +765,10 @@ def index() -> str:
 
   function showTlModalTab(tab) {
     const tableWrap = el("tlModalTableWrap");
-    const projectExpWrap = el("tlModalProjectExpWrap");
     const promptWrap = el("tlModalPromptWrap");
     const agentRespWrap = el("tlModalAgentRespWrap");
 
     if (tableWrap) tableWrap.style.display = tab === "table" ? "block" : "none";
-    if (projectExpWrap) projectExpWrap.style.display = tab === "projectExp" ? "block" : "none";
     if (promptWrap) promptWrap.style.display = tab === "prompt" ? "block" : "none";
     if (agentRespWrap) agentRespWrap.style.display = tab === "agentResponse" ? "block" : "none";
   }
@@ -591,12 +778,11 @@ def index() -> str:
     const title = el("tlModalTitle");
     const tbody = el("tlModalTbody");
     const statusCircle = el("tlModalStatusCircle");
-    const projectExpTextEl = el("tlModalProjectExpText");
     const promptTextEl = el("tlModalPromptText");
     const agentRespTextEl = el("tlModalAgentRespText");
 
-    const candidateName = c?.candidate_name ?? c?.id ?? "";
-    const titleText = c?.title ? `${candidateName} — ${c.title}` : candidateName;
+    const candidateName = candidateNameOrId(c);
+    const titleText = candidatePosition(c) ? `${candidateName} — ${candidatePosition(c)}` : candidateName;
     title.textContent = titleText;
 
     if (statusCircle) {
@@ -607,9 +793,6 @@ def index() -> str:
       statusCircle.style.border = `2px solid ${borderColor}`;
     }
 
-    const candidateId = String(c?.id ?? "");
-    const checks = state.screeningById?.[candidateId]?.checks;
-    const checksList = Array.isArray(checks) ? checks : null;
     const reqs = Array.isArray(c?.requirements) ? c.requirements : [];
     tbody.innerHTML = "";
     reqs.forEach((it) => {
@@ -629,26 +812,6 @@ def index() -> str:
       tbody.appendChild(tr);
     });
 
-    // Render "Общие требования" рядом (если есть checks).
-    const checksTbody = el("tlModalChecksTbody");
-    if (checksTbody) {
-      checksTbody.innerHTML = "";
-      const list = checksList || [];
-      list.forEach((it) => {
-        const ok = !!it?.ok;
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-          <td class="mono" style="font-weight:800; color:${ok ? "#0b8a3a" : "#ff4d4d"};">${ok ? "TRUE" : "FALSE"}</td>
-          <td>${escapeHtml(it?.requirement ?? "")}</td>
-          <td>${escapeHtml(it?.evidence ?? "")}</td>
-        `;
-        checksTbody.appendChild(tr);
-      });
-    }
-
-    if (projectExpTextEl) {
-      projectExpTextEl.textContent = String(c?.candidate_prj_exp ?? "");
-    }
     if (promptTextEl) {
       promptTextEl.textContent = String(c?.debug_prompt ?? "");
     }
@@ -838,13 +1001,6 @@ def index() -> str:
     const idx = "main";
     const list = Array.isArray(state.candidates) ? state.candidates : [];
 
-    const maxJobs = (list || []).reduce((m, c) => {
-      const exp = c?.experience_full ?? c?.experienceFull;
-      const n = Array.isArray(exp) ? exp.length : 0;
-      return Math.max(m, n);
-    }, 0);
-    const expHeaders = Array.from({ length: maxJobs }, (_, i) => `<th>Опыт #${i + 1}</th>`).join("");
-
     host.innerHTML = `
       <div class="card" style="margin-top:0;">
         <div style="overflow:auto; margin-top:10px;">
@@ -855,17 +1011,16 @@ def index() -> str:
                 <th>Имя</th>
                 <th>Позиция</th>
                 <th>Локация</th>
-                <th>Ссылка</th>
                 <th>Возраст</th>
                 <th>ЗП</th>
-                ${expHeaders}
+                <th>Ключевые навыки</th>
               </tr>
             </thead>
             <tbody id="tbody-level-${escapeHtml(idx)}"></tbody>
           </table>
         </div>
-        <div class="row" style="justify-content:flex-end; margin-top:12px;">
-          <button id="btnScreening" type="button" disabled>Скрининг</button>
+        <div class="row" style="justify-content:flex-end; margin-top:12px; gap:10px;">
+          <button id="btnScreening" type="button" disabled>Светофор</button>
         </div>
       </div>
     `;
@@ -873,47 +1028,23 @@ def index() -> str:
     const tbody = host.querySelector(`#tbody-level-${idx}`);
     (list || []).forEach((c) => {
       const area = c.area?.name || c.area?.id || "";
-      const link = c.alternate_url || c.url || "";
-      const salary = c.salary?.amount ? `${c.salary.amount} ${c.salary.currency||""}` : (c.salary ? JSON.stringify(c.salary) : "");
-      const fullName = (c.first_name || c.last_name)
-        ? ((c.last_name||"") + " " + (c.first_name||"")).trim()
-        : "-";
-      const nameShort = truncateEnd(fullName, 25);
+      const salary = formatSalary(c);
+      const skillsText = truncateEnd(formatSkills(c), 80);
+      const nameLabel = truncateEnd(candidateNameOrId(c), 25);
+      const position = truncateEnd(candidatePosition(c), 40);
       const cid = String(c.id || "");
-      const fullExp = Array.isArray(c?.experience_full) ? c.experience_full : [];
-      const expCells = Array.from({ length: maxJobs }, (_, j) => {
-        const it = fullExp[j] || null;
-        if (!it) return `<td></td>`;
-        const start = it?.start || "";
-        const end = it?.end || "";
-        const period = `${start}${(start && end) ? " — " : ""}${end}`.trim();
-        const company = it?.company || "";
-        const position = it?.position || "";
-        const areaName = it?.area?.name || it?.area?.id || "";
-        const industries = Array.isArray(it?.industries) ? it.industries : [];
-        const industriesText = industries.map((x) => x?.name).filter(Boolean).join(", ");
-        const text = [period, company, position, areaName, industriesText].filter(Boolean).join(" | ");
-        return `<td class="mono">${escapeHtml(text)}</td>`;
-      }).join("");
+
       const tr = document.createElement("tr");
       tr.innerHTML = `
         <td>
           <input type="checkbox" data-select="1" ${state.selectedCandidateIds.has(cid) ? "checked" : ""} ${cid ? "" : "disabled"} />
         </td>
-        <td class="mono" title="${escapeHtml(fullName)}">${escapeHtml(nameShort)}</td>
-        <td>${escapeHtml(c.title || "")}</td>
+        <td class="mono" data-open-resume="1" title="${escapeHtml(candidateNameOrId(c))}" style="cursor:pointer; color:#1e73ff; text-decoration:underline;">${escapeHtml(nameLabel)}</td>
+        <td>${escapeHtml(position)}</td>
         <td>${escapeHtml(area)}</td>
-        <td class="${link ? "cell-actions-td" : ""}">
-          ${link ? `
-            <div class="cell-actions" data-link-actions="1">
-              <button class="secondary" type="button" data-action="copy-link" title="Скопировать ссылку">Скопировать</button>
-              <button type="button" data-action="open-link" title="Открыть ссылку">Перейти</button>
-            </div>
-          ` : ""}
-        </td>
         <td>${c.age ?? ""}</td>
         <td class="mono">${escapeHtml(salary || "")}</td>
-        ${expCells}
+        <td class="mono" title="${escapeHtml(formatSkills(c))}">${escapeHtml(skillsText || "—")}</td>
       `;
       const chk = tr.querySelector('input[data-select="1"]');
       if (chk) {
@@ -921,74 +1052,39 @@ def index() -> str:
           if (!cid) return;
           if (chk.checked) state.selectedCandidateIds.add(cid);
           else state.selectedCandidateIds.delete(cid);
-          const btn = el("btnScreening");
-          if (btn) btn.disabled = state.selectedCandidateIds.size <= 0;
+          updateSelectionButtons();
         };
       }
-      const actions = tr.querySelector('[data-link-actions="1"]');
-      if (actions && link) {
-        const copyBtn = actions.querySelector('button[data-action="copy-link"]');
-        const openBtn = actions.querySelector('button[data-action="open-link"]');
-        copyBtn?.addEventListener("click", async (e) => {
-          e.stopPropagation();
-          try {
-            if (navigator.clipboard?.writeText) {
-              await navigator.clipboard.writeText(link);
-            } else {
-              const ta = document.createElement("textarea");
-              ta.value = link;
-              document.body.appendChild(ta);
-              ta.select();
-              document.execCommand("copy");
-              document.body.removeChild(ta);
-            }
-            setStatus(`Ссылка скопирована`);
-          } catch (err) {
-            setStatus("Не удалось скопировать ссылку");
-          }
-        });
-        openBtn?.addEventListener("click", (e) => {
-          e.stopPropagation();
-          window.open(link, "_blank", "noopener,noreferrer");
-        });
+      const nameEl = tr.querySelector('[data-open-resume="1"]');
+      if (nameEl) {
+        nameEl.onclick = () => openResumeModal(c);
       }
       tbody?.appendChild(tr);
     });
 
-    const btn = el("btnScreening");
-    if (btn) {
-      btn.disabled = state.selectedCandidateIds.size <= 0;
-      btn.onclick = async () => {
-        await runScreeningForSelected();
-      };
+    const btnScreening = el("btnScreening");
+    if (btnScreening) {
+      btnScreening.onclick = async () => { await runTrafficLightForSelected(); };
     }
+    updateSelectionButtons();
   }
 
-  async function runScreeningForSelected() {
+  async function runTrafficLightForSelected() {
     const requestText = el("requestText").value.trim();
-    const generalReqText = el("generalReqText").value.trim();
     const list = Array.isArray(state.candidates) ? state.candidates : [];
     const selected = list.filter((c) => state.selectedCandidateIds.has(String(c.id || "")));
     if (!selected.length) {
-      setStatus("Выберите кандидатов для скрининга");
+      setStatus("Выберите кандидатов для светофора");
       return;
     }
     setBusy(true);
-    setStatus(`Скрининг: ${selected.length} кандидатов...`);
+    setStatus(`Светофор: ${selected.length} кандидатов...`);
     try {
-      const data = await api("/api/screening", {
+      const data = await api("/api/traffic_light", {
         request_text: requestText,
-        general_requirements_text: generalReqText,
         candidates: selected,
       });
       const tlItems = Array.isArray(data.traffic_light_candidates) ? data.traffic_light_candidates : [];
-      const gr = Array.isArray(data.general_requirements) ? data.general_requirements : [];
-      state.screeningById = {};
-      gr.forEach((it) => {
-        const cid = String(it?.id ?? "");
-        if (!cid) return;
-        state.screeningById[cid] = it;
-      });
       renderTrafficLightTable(tlItems);
       const tlBlock = el("trafficLightBlock");
       if (tlBlock) tlBlock.style.display = "block";
@@ -1094,15 +1190,16 @@ def index() -> str:
 
   el("btnSearch").onclick = async () => {
     const requestText = el("requestText").value.trim();
-    setBusy(true); setStatus("Поиск: LLM → HH...");
-    // Оценка таймингов поиска (без светофора)
+    setBusy(true); setStatus("Поиск: LLM → HH → просмотр резюме...");
+    const limit = getCandidatesLimit();
+    const target = getSearchTargetCount();
     const stage1Sec = 12;
-    const stage2Sec = 15;
-    const stage3Sec = 5;
+    const stage2Sec = 10;
+    const stage3Sec = Math.max(15, Math.ceil(target / 4));
     const totalSec = stage1Sec + stage2Sec + stage3Sec;
     const stage1Name = "Этап 1: генерация булевых запросов";
     const stage2Name = "Этап 2: поиск в HH";
-    const stage3Name = "Этап 3: постобработка результатов";
+    const stage3Name = `Этап 3: просмотр ${target} резюме (бесплатно)`;
     startProgress(stage1Name, stage1Sec, stage2Name, stage2Sec, stage3Name, stage3Sec, totalSec);
     try {
       state.totalIterations = 0;
@@ -1125,12 +1222,14 @@ def index() -> str:
       state.totalIterations = Number(data.total_iterations || 0);
       state.promptRestarts = Number(data.prompt_restarts || 0);
       // reset traffic lights
-      state.screeningById = {};
+      state.contactsById = {};
+      state.selectedCandidateIds = new Set();
 
       el("results").style.display = "block";
       const totalShown = candidates.length;
-      const minN = getCandidatesLimit();
-      el("pickedInfo").textContent = `Минимум: ${minN}. Показано кандидатов: ${totalShown} (макс: ${Math.min(200, minN * 3)}).`;
+      const needN = getCandidatesLimit();
+      const targetN = getSearchTargetCount();
+      el("pickedInfo").textContent = `Загружено резюме: ${totalShown} (цель поиска: ${targetN} = ${needN}×3, просмотр без контактов).`;
       const tabs = el("levelTabs");
       if (tabs) tabs.style.display = "none";
       renderActiveLevelTable();

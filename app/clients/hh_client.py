@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 from typing import Any
 
 import requests
-from app.core.resume_store import ResumeStore, get_resume_store
+from app.core.resume_store import ResumeStore, get_resume_store, persist_resume
 from app.core.tracing import trace_step
 
 logger = logging.getLogger(__name__)
@@ -149,8 +149,8 @@ class HHClient:
         per_page: int = 20,
         level_name: str = "",
         iteration: int = 0,
-    ) -> tuple[int, list[dict[str, Any]]]:
-        """Выполняем поиск резюме и возвращаем найденное и элементы для UI."""
+    ) -> tuple[int, list[dict[str, Any]], dict[str, Any] | None]:
+        """Выполняем поиск резюме и возвращаем найденное, элементы для UI и сырой ответ HH."""
         trace_step(
             logger,
             "hh_client",
@@ -186,7 +186,7 @@ class HHClient:
                     body_preview=response.text[:500],
                 )
                 logger.error("HH API error status=%s body=%s", response.status_code, response.text[:500])
-                return 0, []
+                return 0, [], None
 
             raw_response = response.json()
             logger.info("HH response keys=%s", list(raw_response.keys()))
@@ -205,14 +205,16 @@ class HHClient:
                 found_count=found_count,
                 items=len(compact_items),
             )
-            return found_count, compact_items
+            return found_count, compact_items, raw_response
         except Exception:
             trace_step(logger, "hh_client", "search.exception", level_name=level_name)
             logger.exception("HH search request failed")
-            return 0, []
+            return 0, [], None
 
-    def get_resume_by_id(self, resume_id: str) -> dict[str, Any] | None:
-        """Получаем полную карточку резюме по ID."""
+    def get_resume_by_id(self, resume_id: str, *, with_contacts: bool = False) -> dict[str, Any] | None:
+        """Получаем полную карточку резюме по ID (бесплатно без контактов, платно с контактами)."""
+        if with_contacts:
+            return self._fetch_resume_with_contacts(resume_id)
         trace_step(logger, "hh_client", "get_resume_by_id.enter", resume_id=resume_id)
         if not self.token:
             self.get_token()
@@ -227,6 +229,10 @@ class HHClient:
         headers = {"Authorization": f"Bearer {self.token}"}
         try:
             response = requests.get(f"{self.base_url}/{resume_id}", headers=headers, timeout=30)
+            if response.status_code == 401:
+                trace_step(logger, "hh_client", "get_resume_by_id.retry_401", resume_id=resume_id)
+                self.get_token()
+                return self.get_resume_by_id(resume_id, with_contacts=False)
             if response.status_code == 200:
                 data = response.json()
                 trace_step(
@@ -236,6 +242,8 @@ class HHClient:
                     resume_id=resume_id,
                     keys=list(data.keys())[:40] if isinstance(data, dict) else None,
                 )
+                if isinstance(data, dict) and data:
+                    persist_resume(resume_id=str(resume_id), resume_json=data)
                 return data
             trace_step(logger, "hh_client", "get_resume_by_id.http_error", resume_id=resume_id, status=response.status_code)
             logger.error("Failed to fetch resume id=%s status=%s", resume_id, response.status_code)
@@ -243,5 +251,44 @@ class HHClient:
         except Exception:
             trace_step(logger, "hh_client", "get_resume_by_id.exception", resume_id=resume_id)
             logger.exception("Failed to fetch resume by id")
+            return None
+
+    def _fetch_resume_with_contacts(self, resume_id: str) -> dict[str, Any] | None:
+        """Платное открытие контактов: GET по URL из actions.get_with_contact или ?with_contact=true."""
+        trace_step(logger, "hh_client", "get_resume_with_contacts.enter", resume_id=resume_id)
+        if not self.token:
+            self.get_token()
+        headers = {"Authorization": f"Bearer {self.token}"}
+        base_resume = self.get_resume_by_id(resume_id, with_contacts=False)
+        contact_url = f"{self.base_url}/{resume_id}?with_contact=true"
+        if isinstance(base_resume, dict):
+            actions = base_resume.get("actions")
+            if isinstance(actions, dict):
+                get_with_contact = actions.get("get_with_contact")
+                if isinstance(get_with_contact, dict) and get_with_contact.get("url"):
+                    contact_url = str(get_with_contact["url"])
+        try:
+            response = requests.get(contact_url, headers=headers, timeout=30)
+            if response.status_code == 401:
+                self.get_token()
+                return self._fetch_resume_with_contacts(resume_id)
+            if response.status_code == 200:
+                data = response.json()
+                trace_step(logger, "hh_client", "get_resume_with_contacts.ok", resume_id=resume_id)
+                if isinstance(data, dict) and data:
+                    persist_resume(resume_id=str(resume_id), resume_json=data)
+                return data
+            trace_step(
+                logger,
+                "hh_client",
+                "get_resume_with_contacts.http_error",
+                resume_id=resume_id,
+                status=response.status_code,
+            )
+            logger.error("Failed to fetch resume with contacts id=%s status=%s", resume_id, response.status_code)
+            return None
+        except Exception:
+            trace_step(logger, "hh_client", "get_resume_with_contacts.exception", resume_id=resume_id)
+            logger.exception("Failed to fetch resume with contacts")
             return None
 
