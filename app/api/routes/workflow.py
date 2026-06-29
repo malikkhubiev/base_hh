@@ -6,8 +6,9 @@ from typing import Any
 
 from fastapi import APIRouter
 from fastapi import HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 
+from app.core.resume_pdf_store import resume_pdf_exists, resume_pdf_path
 from app.core.resume_store import persist_scored_resume, persist_resume, get_resume_store
 from app.core.settings import settings
 from app.core.tracing import trace_step
@@ -121,6 +122,34 @@ def default_request() -> str:
     return PromptService().get_default_request_text()
 
 
+@router.get("/resumes/{resume_id}/pdf")
+async def download_resume_pdf(resume_id: str):
+    import asyncio
+
+    rid = str(resume_id or "").strip()
+    if not rid:
+        raise HTTPException(status_code=400, detail="resume_id is required")
+    if resume_pdf_exists(rid):
+        trace_step(_log, "workflow", "download_resume_pdf.cache_hit", resume_id=rid)
+        return FileResponse(
+            resume_pdf_path(rid),
+            media_type="application/pdf",
+            filename=f"resume_{rid}.pdf",
+        )
+
+    hh = HHSearchService(token_url=settings.hh_token_url, token_source=settings.token_source)
+    trace_step(_log, "workflow", "download_resume_pdf.fetch", resume_id=rid)
+    ok = await asyncio.to_thread(hh.hh.download_resume_pdf, rid)
+    if not ok or not resume_pdf_exists(rid):
+        raise HTTPException(status_code=502, detail="Failed to download PDF from HH")
+
+    return FileResponse(
+        resume_pdf_path(rid),
+        media_type="application/pdf",
+        filename=f"resume_{rid}.pdf",
+    )
+
+
 @router.get("/system_prompt", response_class=PlainTextResponse)
 def system_prompt() -> str:
     trace_step(_log, "workflow", "system_prompt")
@@ -189,6 +218,14 @@ def _run_search_with_restarts(
         per_page=min(200, int(payload.candidates_limit) * 3),
         min_needed=int(payload.candidates_limit),
     )
+    if hh.hh.last_request_error and not candidates_raw:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Не удалось подключиться к HH API (проверьте интернет и настройки прокси). "
+                f"Причина: {hh.hh.last_request_error}"
+            ),
+        )
     hh_finished_at = datetime.utcnow()
     total_iterations = len(stage_attempts)
     prompt_restarts = 0

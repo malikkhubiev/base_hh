@@ -128,18 +128,19 @@ class HHSearchService:
             stage_items = items if isinstance(items, list) else []
             stage_collected = len(stage_items)
             main_items = stage_items[:target_count]
-            stage_attempts.append(
-                {
-                    "stage": stage_name,
-                    "query": q,
-                    "query_with_exclusion": full_q,
-                    "found": last_count,
-                    "collected": stage_collected,
-                    "target": target_count,
-                    "enough": stage_collected >= target_count,
-                    "web_url": web_url,
-                }
-            )
+            stage_attempt: dict[str, Any] = {
+                "stage": stage_name,
+                "query": q,
+                "query_with_exclusion": full_q,
+                "found": last_count,
+                "collected": stage_collected,
+                "target": target_count,
+                "enough": stage_collected >= target_count,
+                "web_url": web_url,
+            }
+            if self.hh.last_request_error:
+                stage_attempt["error"] = self.hh.last_request_error
+            stage_attempts.append(stage_attempt)
             trace_step(
                 logger,
                 "hh_search",
@@ -149,6 +150,14 @@ class HHSearchService:
                 items_returned=stage_collected,
                 target=target_count,
             )
+            if self.hh.last_request_error:
+                trace_step(
+                    logger,
+                    "hh_search",
+                    "search_counts_and_candidates.network_error",
+                    error=self.hh.last_request_error,
+                )
+                break
             if stage_collected >= target_count:
                 break
 

@@ -7,7 +7,10 @@ from urllib.parse import urlencode
 from typing import Any
 
 import requests
+from requests import Session
+from app.core.resume_pdf_store import resume_pdf_exists, save_resume_pdf
 from app.core.resume_store import ResumeStore, get_resume_store, persist_resume
+from app.core.settings import settings
 from app.core.tracing import trace_step
 
 logger = logging.getLogger(__name__)
@@ -27,11 +30,32 @@ class HHClient:
         self.base_url = "https://api.hh.ru/resumes"
         self.token_source = token_source
         self.resume_store = resume_store or get_resume_store()
+        self.last_request_error: str | None = None
+        self._session = self._build_session()
+
+    def _build_session(self) -> Session:
+        session = Session()
+        http_proxy = (settings.hh_http_proxy or "").strip()
+        https_proxy = (settings.hh_https_proxy or "").strip()
+        if http_proxy or https_proxy:
+            session.proxies = {
+                "http": http_proxy or None,
+                "https": https_proxy or None,
+            }
+            session.trust_env = False
+        elif settings.hh_trust_env_proxy:
+            session.trust_env = True
+        else:
+            session.trust_env = False
+        return session
+
+    def _http_get(self, url: str, **kwargs: Any) -> requests.Response:
+        return self._session.get(url, **kwargs)
 
     def get_token(self) -> str:
         """Получаем API-токен HH из SSP-эндпоинта."""
         trace_step(logger, "hh_client", "get_token.request", token_source=self.token_source, token_url=self.token_url)
-        response = requests.get(self.token_url, timeout=10)
+        response = self._http_get(self.token_url, timeout=10)
         response.raise_for_status()
         self.token = response.content.decode("utf-8")
         logger.info("HH token received from SSP source: %s", self.token_source)
@@ -169,7 +193,8 @@ class HHClient:
             logger.info("HH search started, level=%s", level_name)
             logger.info("HH search query=%s", query[:200])
             logger.info("HH API params=%s", json.dumps(params, ensure_ascii=False))
-            response = requests.get(self.base_url, headers=headers, params=params, timeout=30)
+            self.last_request_error = None
+            response = self._http_get(self.base_url, headers=headers, params=params, timeout=30)
             logger.info("HH response status=%s", response.status_code)
 
             if response.status_code == 401:
@@ -206,7 +231,13 @@ class HHClient:
                 items=len(compact_items),
             )
             return found_count, compact_items, raw_response
+        except requests.RequestException as exc:
+            self.last_request_error = str(exc)
+            trace_step(logger, "hh_client", "search.exception", level_name=level_name, error=self.last_request_error)
+            logger.exception("HH search request failed")
+            return 0, [], None
         except Exception:
+            self.last_request_error = "unexpected HH search error"
             trace_step(logger, "hh_client", "search.exception", level_name=level_name)
             logger.exception("HH search request failed")
             return 0, [], None
@@ -228,7 +259,7 @@ class HHClient:
             return cached
         headers = {"Authorization": f"Bearer {self.token}"}
         try:
-            response = requests.get(f"{self.base_url}/{resume_id}", headers=headers, timeout=30)
+            response = self._http_get(f"{self.base_url}/{resume_id}", headers=headers, timeout=30)
             if response.status_code == 401:
                 trace_step(logger, "hh_client", "get_resume_by_id.retry_401", resume_id=resume_id)
                 self.get_token()
@@ -253,6 +284,103 @@ class HHClient:
             logger.exception("Failed to fetch resume by id")
             return None
 
+    def _extract_pdf_download_url(self, resume_data: dict[str, Any]) -> str | None:
+        """URL PDF без контактов: actions.download.pdf (не download_with_contact)."""
+        actions = resume_data.get("actions")
+        if isinstance(actions, dict):
+            download = actions.get("download")
+            if isinstance(download, dict):
+                pdf_info = download.get("pdf")
+                if isinstance(pdf_info, dict):
+                    url = pdf_info.get("url")
+                    if url:
+                        return str(url).strip()
+        # В сокращённой выдаче HH ссылка может быть только в корневом download.
+        download = resume_data.get("download")
+        if isinstance(download, dict):
+            pdf_info = download.get("pdf")
+            if isinstance(pdf_info, dict):
+                url = pdf_info.get("url")
+                if url:
+                    return str(url).strip()
+        return None
+
+    def _fetch_resume_for_pdf_url(self, resume_id: str) -> dict[str, Any] | None:
+        """Свежий GET /resumes/{id} без with_contact — не из кэша с открытыми контактами."""
+        rid = str(resume_id or "").strip()
+        if not rid:
+            return None
+        if not self.token:
+            self.get_token()
+        headers = {"Authorization": f"Bearer {self.token}"}
+        try:
+            response = self._http_get(f"{self.base_url}/{rid}", headers=headers, timeout=30)
+            if response.status_code == 401:
+                self.get_token()
+                return self._fetch_resume_for_pdf_url(rid)
+            if response.status_code == 200:
+                data = response.json()
+                return data if isinstance(data, dict) and data else None
+            logger.error("Failed to fetch resume for PDF url id=%s status=%s", rid, response.status_code)
+            return None
+        except Exception:
+            logger.exception("Failed to fetch resume for PDF url id=%s", rid)
+            return None
+
+    def download_resume_pdf(self, resume_id: str) -> bool:
+        """Скачивает PDF резюме без контактов (actions.download.pdf.url)."""
+        rid = str(resume_id or "").strip()
+        if not rid:
+            return False
+        trace_step(logger, "hh_client", "download_resume_pdf.enter", resume_id=rid)
+        if resume_pdf_exists(rid):
+            trace_step(logger, "hh_client", "download_resume_pdf.cache_hit", resume_id=rid)
+            return True
+
+        # Всегда берём свежий JSON без контактов: кэш после open_contacts может
+        # содержать download_with_contact или top-level download с контактами.
+        data = self._fetch_resume_for_pdf_url(rid)
+        if not isinstance(data, dict):
+            return False
+
+        pdf_url = self._extract_pdf_download_url(data)
+        if not pdf_url:
+            trace_step(logger, "hh_client", "download_resume_pdf.no_url", resume_id=rid)
+            return False
+
+        if not self.token:
+            self.get_token()
+        headers = {"Authorization": f"Bearer {self.token}"}
+        try:
+            response = self._http_get(pdf_url, headers=headers, timeout=60)
+            if response.status_code == 401:
+                trace_step(logger, "hh_client", "download_resume_pdf.retry_401", resume_id=rid)
+                self.get_token()
+                return self.download_resume_pdf(rid)
+            if response.status_code == 200 and response.content:
+                save_resume_pdf(resume_id=rid, content=response.content)
+                trace_step(
+                    logger,
+                    "hh_client",
+                    "download_resume_pdf.ok",
+                    resume_id=rid,
+                    size=len(response.content),
+                )
+                return True
+            trace_step(
+                logger,
+                "hh_client",
+                "download_resume_pdf.http_error",
+                resume_id=rid,
+                status=response.status_code,
+            )
+            logger.error("Failed to download resume PDF id=%s status=%s", rid, response.status_code)
+            return False
+        except Exception:
+            trace_step(logger, "hh_client", "download_resume_pdf.exception", resume_id=rid)
+            logger.exception("Failed to download resume PDF id=%s", rid)
+            return False
+
     def _fetch_resume_with_contacts(self, resume_id: str) -> dict[str, Any] | None:
         """Платное открытие контактов: GET по URL из actions.get_with_contact.url (токен with_contact)."""
         trace_step(logger, "hh_client", "get_resume_with_contacts.enter", resume_id=resume_id)
@@ -268,7 +396,7 @@ class HHClient:
                 if isinstance(get_with_contact, dict) and get_with_contact.get("url"):
                     contact_url = str(get_with_contact["url"])
         try:
-            response = requests.get(contact_url, headers=headers, timeout=30)
+            response = self._http_get(contact_url, headers=headers, timeout=30)
             if response.status_code == 401:
                 self.get_token()
                 return self._fetch_resume_with_contacts(resume_id)

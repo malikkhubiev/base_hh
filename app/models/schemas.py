@@ -73,6 +73,7 @@ class SearchStageAttempt(BaseModel):
     target: int
     enough: bool
     web_url: str | None = None
+    error: str | None = None
 
 
 class SearchRequest(BaseModel):

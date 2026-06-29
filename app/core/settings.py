@@ -18,5 +18,15 @@ class Settings(BaseModel):
 
     # PostgreSQL (опционально). Пример: postgresql://user:pass@host:5432/dbname
     database_url: str = Field(default_factory=lambda: os.getenv("DATABASE_URL", ""))
+
+    # Локальное хранилище PDF резюме HH (скачиваются при просмотре полного резюме).
+    resume_pdf_dir: str = Field(default_factory=lambda: os.getenv("RESUME_PDF_DIR", "data/resumes"))
+
+    # Прокси для HH: по умолчанию игнорируем системный HTTP(S)_PROXY (частая причина ProxyError на Windows).
+    hh_trust_env_proxy: bool = Field(
+        default_factory=lambda: os.getenv("HH_TRUST_ENV_PROXY", "").lower() in ("1", "true", "yes")
+    )
+    hh_http_proxy: str = Field(default_factory=lambda: os.getenv("HH_HTTP_PROXY", ""))
+    hh_https_proxy: str = Field(default_factory=lambda: os.getenv("HH_HTTPS_PROXY", ""))
 settings = Settings()
 

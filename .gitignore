@@ -3,5 +3,6 @@ __pycache__/
 .env
 logs/*.json
 logs/*.log
+data/resumes/
 .pytest_cache/
 

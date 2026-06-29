@@ -154,6 +154,31 @@ def index() -> str:
     }
     .cell-actions button:first-child { border-left: 0; }
     .cell-actions button.secondary { background: #fff; color: #000; }
+    .cell-actions a {
+      flex: 1 1 0;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      border-left: 1px solid #000;
+      padding: 10px 8px;
+      font-size: 12px;
+      text-transform: none;
+      letter-spacing: 0;
+      line-height: 1.1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-decoration: none;
+      background: #fff;
+      color: #000;
+    }
+    .cell-actions a:first-child { border-left: 0; }
+    .cell-actions a.disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
 
     .level-tab {
       border: 2px solid #000;
@@ -936,7 +961,8 @@ def index() -> str:
       const collected = Number(it.collected || 0);
       const target = Number(it.target || 0);
       const enough = !!it.enough;
-      const result = enough ? "Хватило" : "Меньше нужного";
+      const err = String(it.error || "").trim();
+      const result = err ? `Ошибка HH: ${escapeHtml(err)}` : (enough ? "Хватило" : "Меньше нужного");
       return `<tr>
         <td>${stage}</td>
         <td class="mono">${query}</td>
@@ -1075,6 +1101,7 @@ def index() -> str:
                 <th>Возраст</th>
                 <th>ЗП</th>
                 <th>Ключевые навыки</th>
+                <th>Скачать</th>
               </tr>
             </thead>
             <tbody id="tbody-level-${escapeHtml(idx)}"></tbody>
@@ -1094,6 +1121,10 @@ def index() -> str:
       const nameLabel = truncateEnd(candidateNameOrId(c), 25);
       const position = truncateEnd(candidatePosition(c), 40);
       const cid = String(c.id || "");
+      const pdfHref = cid ? `/api/resumes/${encodeURIComponent(cid)}/pdf` : "";
+      const pdfCell = pdfHref
+        ? `<a href="${escapeHtml(pdfHref)}" download="resume_${escapeHtml(cid)}.pdf" title="Скачать PDF резюме">Скачать</a>`
+        : `<span class="mono" style="opacity:0.5;">—</span>`;
 
       const tr = document.createElement("tr");
       tr.innerHTML = `
@@ -1106,6 +1137,9 @@ def index() -> str:
         <td>${c.age ?? ""}</td>
         <td class="mono">${escapeHtml(salary || "")}</td>
         <td class="mono" title="${escapeHtml(formatSkills(c))}">${escapeHtml(skillsText || "—")}</td>
+        <td class="cell-actions-td">
+          <div class="cell-actions">${pdfCell}</div>
+        </td>
       `;
       const chk = tr.querySelector('input[data-select="1"]');
       if (chk) {
