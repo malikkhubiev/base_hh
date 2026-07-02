@@ -1,8 +1,7 @@
 """
-Проверка записи/чтения таблицы resume_cache в вашем PostgreSQL.
+Проверка записи/чтения таблиц resume_cache, workflow_sessions и traffic_light_cache.
 
 Запуск (из корня проекта):
-  set DATABASE_URL=postgresql://...
   python scripts/verify_postgres_resume_store.py
 """
 from __future__ import annotations
@@ -18,18 +17,22 @@ TEST_RESUME_ID = "__hh_optimizer_resume_store_check__"
 
 
 def main() -> int:
-    dsn = (os.getenv("DATABASE_URL") or "").strip()
+    from app.core.settings import settings
+
+    dsn = (settings.database_url or "").strip()
     if not dsn:
-        print("ERROR: задайте DATABASE_URL (postgresql://USER:PASSWORD@HOST:PORT/DBNAME)")
+        print("ERROR: задайте DB_* env vars или DATABASE_URL")
         return 1
 
     from app.core.resume_store import get_resume_store, persist_scored_resume
+    from app.core.traffic_light_store import get_traffic_light_store, persist_traffic_light_batch
     from app.core.workflow_session import ensure_session_schema, create_session, get_session
 
     store = get_resume_store()
-    print("Подключение OK, применяю схему resume_cache и workflow_sessions...")
+    print("Подключение OK, применяю схему resume_cache, workflow_sessions, traffic_light_cache...")
     store.ensure_schema()
     ensure_session_schema()
+    get_traffic_light_store().ensure_schema()
 
     sample = {
         "id": TEST_RESUME_ID,
@@ -59,12 +62,41 @@ def main() -> int:
         print("ERROR: workflow_sessions — сессия не прочиталась из Postgres")
         return 1
 
+    persist_traffic_light_batch(
+        session_id=session.session_id,
+        items=[
+            {
+                "id": TEST_RESUME_ID,
+                "candidate_name": "User Test",
+                "title": "Dev",
+                "location": "Moscow",
+                "color_score_percent": 77,
+                "requirements": [
+                    {
+                        "requirement": "Python",
+                        "resume_evidence": "ACME",
+                        "match_percent": 100,
+                        "difference_comment": "OK",
+                    }
+                ],
+            }
+        ],
+    )
+    tl_loaded = get_traffic_light_store().get_for_session(
+        session_id=session.session_id,
+        resume_ids=[TEST_RESUME_ID],
+    )
+    if TEST_RESUME_ID not in tl_loaded or tl_loaded[TEST_RESUME_ID].color_score_percent != 77:
+        print("ERROR: traffic_light_cache — данные не совпали")
+        return 1
+
     with psycopg.connect(dsn, autocommit=True) as conn:
         with conn.cursor() as cur:
+            cur.execute("DELETE FROM traffic_light_cache WHERE session_id = %s", (session.session_id,))
             cur.execute("DELETE FROM workflow_sessions WHERE session_id = %s", (session.session_id,))
             cur.execute("DELETE FROM resume_cache WHERE resume_id = %s", (TEST_RESUME_ID,))
 
-    print("OK: workflow_sessions — запись и чтение работают.")
+    print("OK: workflow_sessions и traffic_light_cache — запись и чтение работают.")
     return 0
 
 

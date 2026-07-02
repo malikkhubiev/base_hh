@@ -579,6 +579,47 @@ def index() -> str:
     return parts.join(" — ");
   }
 
+  function extractContactsFromResume(resume) {
+    let phone = null;
+    let email = null;
+    const raw = [];
+    const contact = resume?.contact;
+    if (!Array.isArray(contact)) {
+      return { phone, email, contacts: raw };
+    }
+    contact.forEach((item) => {
+      if (!item || typeof item !== "object") return;
+      raw.push(item);
+      const value = String(item?.contact_value || "").trim();
+      if (!value) return;
+      const typeId = String(item?.type?.id || item?.type || "").toLowerCase();
+      const kind = String(item?.kind || "").toLowerCase();
+      if (!email && (kind === "email" || typeId === "email")) email = value;
+      else if (!phone && (kind === "phone" || ["cell", "home", "work", "phone"].includes(typeId))) phone = value;
+    });
+    if (!phone && resume?.phone) phone = String(resume.phone);
+    if (!email && resume?.email) email = String(resume.email);
+    return { phone, email, contacts: raw };
+  }
+
+  function stage3ItemToContactInfo(item) {
+    const tl = item?.traffic_light || {};
+    const resume = item?.resume_json || {};
+    const id = String(tl?.id || resume?.id || "");
+    const extracted = extractContactsFromResume(resume);
+    return {
+      id,
+      candidate_name: tl?.candidate_name || resume?.last_name && resume?.first_name
+        ? `${resume.last_name} ${resume.first_name}`.trim()
+        : id,
+      phone: extracted.phone,
+      email: extracted.email,
+      contacts: extracted.contacts,
+      error: item?.error || null,
+      resume_json: resume,
+    };
+  }
+
   function openContactsModal(contactInfo) {
     const backdrop = el("contactsModalBackdrop");
     const title = el("contactsModalTitle");
@@ -637,14 +678,15 @@ def index() -> str:
         session_id: state.sessionId,
         candidate_ids: selectedIds,
       });
-      const items = Array.isArray(data.contacts) ? data.contacts : [];
+      const items = Array.isArray(data.candidates) ? data.candidates : [];
       let ok = 0;
       let failed = 0;
       items.forEach((it) => {
-        const cid = String(it?.id ?? "");
+        const contactInfo = stage3ItemToContactInfo(it);
+        const cid = String(contactInfo?.id ?? "");
         if (!cid) return;
-        state.contactsById[cid] = it;
-        if (it?.error) failed += 1;
+        state.contactsById[cid] = contactInfo;
+        if (contactInfo?.error) failed += 1;
         else ok += 1;
       });
       renderTrafficLightTable(state.trafficLightCandidates);

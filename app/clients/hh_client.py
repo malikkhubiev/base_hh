@@ -31,6 +31,7 @@ class HHClient:
         self.token_source = token_source
         self.resume_store = resume_store or get_resume_store()
         self.last_request_error: str | None = None
+        self.last_contact_error: str | None = None
         self._session = self._build_session()
 
     def _build_session(self) -> Session:
@@ -305,8 +306,38 @@ class HHClient:
                     return str(url).strip()
         return None
 
-    def _fetch_resume_for_pdf_url(self, resume_id: str) -> dict[str, Any] | None:
-        """Свежий GET /resumes/{id} без with_contact — не из кэша с открытыми контактами."""
+    def _resume_has_contacts(self, resume_data: dict[str, Any]) -> bool:
+        contact = resume_data.get("contact")
+        if isinstance(contact, list):
+            for item in contact:
+                if not isinstance(item, dict):
+                    continue
+                text = item.get("contact_value")
+                if isinstance(text, str) and text.strip():
+                    return True
+                value = item.get("value")
+                if isinstance(value, dict):
+                    formatted = value.get("formatted") or value.get("number")
+                    if formatted:
+                        return True
+                elif value:
+                    return True
+        return bool(resume_data.get("phone") or resume_data.get("email"))
+
+    def _extract_get_with_contact_url(self, resume_data: dict[str, Any]) -> str | None:
+        actions = resume_data.get("actions")
+        if not isinstance(actions, dict):
+            return None
+        get_with_contact = actions.get("get_with_contact")
+        if not isinstance(get_with_contact, dict):
+            return None
+        url = get_with_contact.get("url")
+        if isinstance(url, str) and url.strip():
+            return url.strip()
+        return None
+
+    def _fetch_fresh_resume_by_id(self, resume_id: str) -> dict[str, Any] | None:
+        """Свежий GET /resumes/{id} без кэша — нужен для actions.get_with_contact и PDF."""
         rid = str(resume_id or "").strip()
         if not rid:
             return None
@@ -317,15 +348,24 @@ class HHClient:
             response = self._http_get(f"{self.base_url}/{rid}", headers=headers, timeout=30)
             if response.status_code == 401:
                 self.get_token()
-                return self._fetch_resume_for_pdf_url(rid)
+                return self._fetch_fresh_resume_by_id(rid)
             if response.status_code == 200:
                 data = response.json()
                 return data if isinstance(data, dict) and data else None
-            logger.error("Failed to fetch resume for PDF url id=%s status=%s", rid, response.status_code)
+            logger.error(
+                "Failed to fetch fresh resume id=%s status=%s body=%s",
+                rid,
+                response.status_code,
+                response.text[:500],
+            )
             return None
         except Exception:
-            logger.exception("Failed to fetch resume for PDF url id=%s", rid)
+            logger.exception("Failed to fetch fresh resume id=%s", rid)
             return None
+
+    def _fetch_resume_for_pdf_url(self, resume_id: str) -> dict[str, Any] | None:
+        """Свежий GET /resumes/{id} без with_contact — не из кэша с открытыми контактами."""
+        return self._fetch_fresh_resume_by_id(resume_id)
 
     def download_resume_pdf(self, resume_id: str) -> bool:
         """Скачивает PDF резюме без контактов (actions.download.pdf.url)."""
@@ -383,40 +423,86 @@ class HHClient:
 
     def _fetch_resume_with_contacts(self, resume_id: str) -> dict[str, Any] | None:
         """Платное открытие контактов: GET по URL из actions.get_with_contact.url (токен with_contact)."""
-        trace_step(logger, "hh_client", "get_resume_with_contacts.enter", resume_id=resume_id)
+        rid = str(resume_id or "").strip()
+        trace_step(logger, "hh_client", "get_resume_with_contacts.enter", resume_id=rid)
+        self.last_contact_error = None
+        if not rid:
+            return None
+
+        try:
+            cached = self.resume_store.get_resume_json(resume_id=rid)
+        except Exception:
+            cached = None
+        if isinstance(cached, dict) and cached and self._resume_has_contacts(cached):
+            trace_step(logger, "hh_client", "get_resume_with_contacts.cache_hit", resume_id=rid)
+            return cached
+
         if not self.token:
             self.get_token()
         headers = {"Authorization": f"Bearer {self.token}"}
-        base_resume = self.get_resume_by_id(resume_id, with_contacts=False)
-        contact_url = f"{self.base_url}/{resume_id}?with_contact=true"
-        if isinstance(base_resume, dict):
+
+        # Свежий GET: в кэше этапа 1 может не быть actions или токен with_contact устарел.
+        base_resume = self._fetch_fresh_resume_by_id(rid)
+        if not isinstance(base_resume, dict):
+            self.last_contact_error = "failed to load resume from HH"
+            return None
+
+        if self._resume_has_contacts(base_resume):
+            trace_step(logger, "hh_client", "get_resume_with_contacts.already_open", resume_id=rid)
+            persist_resume(resume_id=rid, resume_json=base_resume)
+            return base_resume
+
+        contact_url = self._extract_get_with_contact_url(base_resume)
+        if not contact_url:
             actions = base_resume.get("actions")
-            if isinstance(actions, dict):
-                get_with_contact = actions.get("get_with_contact")
-                if isinstance(get_with_contact, dict) and get_with_contact.get("url"):
-                    contact_url = str(get_with_contact["url"])
+            action_keys = list(actions.keys()) if isinstance(actions, dict) else []
+            trace_step(
+                logger,
+                "hh_client",
+                "get_resume_with_contacts.no_action",
+                resume_id=rid,
+                action_keys=action_keys,
+            )
+            logger.error(
+                "No get_with_contact action for resume id=%s (actions=%s)",
+                rid,
+                action_keys,
+            )
+            self.last_contact_error = "HH did not provide get_with_contact action (contacts may be unavailable)"
+            return None
+
         try:
             response = self._http_get(contact_url, headers=headers, timeout=30)
             if response.status_code == 401:
                 self.get_token()
-                return self._fetch_resume_with_contacts(resume_id)
+                return self._fetch_resume_with_contacts(rid)
             if response.status_code == 200:
                 data = response.json()
-                trace_step(logger, "hh_client", "get_resume_with_contacts.ok", resume_id=resume_id)
+                trace_step(logger, "hh_client", "get_resume_with_contacts.ok", resume_id=rid)
                 if isinstance(data, dict) and data:
-                    persist_resume(resume_id=str(resume_id), resume_json=data)
+                    persist_resume(resume_id=rid, resume_json=data)
                 return data
             trace_step(
                 logger,
                 "hh_client",
                 "get_resume_with_contacts.http_error",
-                resume_id=resume_id,
+                resume_id=rid,
                 status=response.status_code,
+                contact_url=contact_url,
+                body_preview=response.text[:500],
             )
-            logger.error("Failed to fetch resume with contacts id=%s status=%s", resume_id, response.status_code)
+            logger.error(
+                "Failed to fetch resume with contacts id=%s status=%s url=%s body=%s",
+                rid,
+                response.status_code,
+                contact_url,
+                response.text[:500],
+            )
+            self.last_contact_error = f"HH returned {response.status_code}: {response.text[:200]}"
             return None
         except Exception:
-            trace_step(logger, "hh_client", "get_resume_with_contacts.exception", resume_id=resume_id)
+            trace_step(logger, "hh_client", "get_resume_with_contacts.exception", resume_id=rid)
             logger.exception("Failed to fetch resume with contacts")
+            self.last_contact_error = "failed to open contacts"
             return None
 

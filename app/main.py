@@ -79,12 +79,14 @@ class TraceRequestMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    if os.getenv("SKIP_DB_INIT") != "1" and (settings.database_url or "").strip():
+    if os.getenv("SKIP_DB_INIT") != "1":
         from app.core.resume_store import get_resume_store
+        from app.core.traffic_light_store import get_traffic_light_store
         from app.core.workflow_session import ensure_session_schema
 
         get_resume_store().ensure_schema()
         ensure_session_schema()
+        get_traffic_light_store().ensure_schema()
     yield
 
 

@@ -1,0 +1,48 @@
+# config.py
+import os
+from urllib.parse import quote_plus
+
+class Settings:
+    # Базовые параметры
+    DB_HOST = os.getenv("DB_HOST", "localhost")
+    DB_PORT = os.getenv("DB_PORT", "5432")
+    DB_USER = os.getenv("DB_USER", "postgres")
+    DB_PASSWORD = os.getenv("DB_PASSWORD", "mysecretpassword")
+    DB_NAME = os.getenv("DB_NAME", "fastapi_db")
+    
+    # SSL для продакшена
+    DB_SSL_MODE = os.getenv("DB_SSL_MODE", "disable")  # или "require"
+    
+    @property
+    def DATABASE_URL(self):
+        # Экранируем пароль (на случай спецсимволов)
+        encoded_password = quote_plus(self.DB_PASSWORD)
+        
+        # Формируем URL
+        url = f"postgresql://{self.DB_USER}:{encoded_password}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
+        
+        # Добавляем SSL если нужно
+        if self.DB_SSL_MODE != "disable":
+            url += f"?sslmode={self.DB_SSL_MODE}"
+        
+        return url
+
+settings = Settings()
+Пример .env для локальной разработки:
+
+env
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=mysecretpassword
+DB_NAME=fastapi_db
+DB_SSL_MODE=disable
+Пример .env.production:
+
+env
+DB_HOST=postgres-production-cluster.aws.com
+DB_PORT=5432
+DB_USER=app_user
+DB_PASSWORD=${PROD_DB_PASSWORD}  # Берется из секретов
+DB_NAME=production_db
+DB_SSL_MODE=require

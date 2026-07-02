@@ -1,0 +1,1166 @@
+{
+    "session_id": "206b175c-beb9-4bc4-b31b-e233ca370d07",
+    "candidates": [
+        {
+            "traffic_light": {
+                "id": "c9ef2262000941821700562f60785657723343",
+                "candidate_name": "Курбанов Руслан",
+                "title": "Data Engineer",
+                "location": "Москва",
+                "color_score_percent": 100,
+                "requirements": [
+                    {
+                        "requirement": "Опыт разработки на Python от 4 лет в production-системах (PET и MVP без продакшена не рассматриваются)",
+                        "resume_evidence": "2024-09-01 (Бюро 1440) Data Engineer: Разработка и поддержка ETL-процессов для обработки телеком-данных (MinIO → Python/Polars → ClickHouse). 2023-08-01 - 2024-09-01 (Сбер) Data Engineer: Написание скриптов(Python/Spark) для обработки данных и AdHoc аналитики. 2022-04-01 - 2023-08-01 (Банк ВТБ (ПАО)) Data Engineer: Написание python-скриптов и sql-запросов.",
+                        "match_percent": 100,
+                        "difference_comment": "Кандидат имеет более 4 лет опыта работы с Python в production-системах."
+                    },
+                    {
+                        "requirement": "Опыт работы с MPP аналитическими хранилищами данных: Arenadata HyperWave ИЛИ Greenplum / Vertica / Teradata / ClickHouse (DWH)",
+                        "resume_evidence": "2024-09-01 (Бюро 1440) Data Engineer: Работа с ClickHouse.",
+                        "match_percent": 100,
+                        "difference_comment": "Кандидат имеет опыт работы с ClickHouse."
+                    },
+                    {
+                        "requirement": "Опыт работы с Hadoop / Data Lake стеком: Arenadata Hadoop ИЛИ Apache Hadoop (HDFS или Ozone)",
+                        "resume_evidence": "2023-08-01 - 2024-09-01 (Сбер) Data Engineer: Опыт работы с Hadoop (HDFS, HiveSQL, Hue, YARN). 2022-04-01 - 2023-08-01 (Банк ВТБ (ПАО)) Data Engineer: Опыт работы с Hadoop (HDFS, HiveSQL, Hue, YARN).",
+                        "match_percent": 100,
+                        "difference_comment": "Кандидат имеет опыт работы с Hadoop (HDFS)."
+                    },
+                    {
+                        "requirement": "Опыт работы с SQL-движками: Impala ИЛИ Hive",
+                        "resume_evidence": "2023-08-01 - 2024-09-01 (Сбер) Data Engineer: Опыт работы с HiveSQL. 2022-04-01 - 2023-08-01 (Банк ВТБ (ПАО)) Data Engineer: Опыт работы с HiveSQL.",
+                        "match_percent": 100,
+                        "difference_comment": "Кандидат имеет опыт работы с Hive."
+                    },
+                    {
+                        "requirement": "Опыт работы с Parquet",
+                        "resume_evidence": "2024-09-01 (Бюро 1440) Data Engineer: Работа с Parquet.",
+                        "match_percent": 100,
+                        "difference_comment": "Кандидат имеет опыт работы с Parquet."
+                    }
+                ]
+            },
+            "resume_json": {
+                "id": "c9ef2262000941821700562f60785657723343",
+                "age": 27,
+                "area": {
+                    "id": "1",
+                    "url": "https://api.hh.ru/areas/1",
+                    "name": "Москва"
+                },
+                "site": [],
+                "tags": [],
+                "metro": null,
+                "owner": {
+                    "id": "39248417",
+                    "comments": {
+                        "url": "https://api.hh.ru/applicant_comments/39248417",
+                        "counters": {
+                            "total": 0
+                        }
+                    }
+                },
+                "photo": null,
+                "title": "Data Engineer",
+                "gender": {
+                    "id": "male",
+                    "name": "Мужской"
+                },
+                "salary": null,
+                "skills": "Data Engineer с 3-летним опытом работы в финансовом секторе(финтех). \nСпециализируюсь на создании и автоматизации ETL-процессов, написании скриптов на Python и SQL, а также поддержке и улучшении хранилищ данных. \nОбрабатываю большие объёмы данных при помощи Python, SQL и Spark, а также углубляюсь в их анализ для выявления причин инцидентов.\nИмею опыт работы с Apache Nifi, Apache Kafka и различными инструментами для анализа данных. \nЗнаком с основами машинного обучения, понимаю ценность данных для бизнеса и архитектуры.\nПостоянно стремлюсь к профессиональному росту и готов к решению сложных задач для достижения бизнес-целей.\n\nTelegram https://t.me/k4iiser\n",
+                "actions": {
+                    "download": {
+                        "pdf": {
+                            "url": "https://api.hh.ru/resumes/c9ef2262000941821700562f60785657723343/download/%D0%9A%D1%83%D1%80%D0%B1%D0%B0%D0%BD%D0%BE%D0%B2%20%D0%A0%D1%83%D1%81%D0%BB%D0%B0%D0%BD.pdf?type=pdf"
+                        },
+                        "rtf": {
+                            "url": "https://api.hh.ru/resumes/c9ef2262000941821700562f60785657723343/download/%D0%9A%D1%83%D1%80%D0%B1%D0%B0%D0%BD%D0%BE%D0%B2%20%D0%A0%D1%83%D1%81%D0%BB%D0%B0%D0%BD.rtf?type=rtf"
+                        }
+                    }
+                },
+                "contact": [
+                    {
+                        "kind": "phone",
+                        "type": {
+                            "id": "cell",
+                            "name": "Мобильный телефон"
+                        },
+                        "value": {
+                            "city": "912",
+                            "number": "9298777",
+                            "country": "7",
+                            "formatted": "+7 912 929-87-77"
+                        },
+                        "comment": null,
+                        "verified": true,
+                        "preferred": false,
+                        "contact_value": "+7 912 929-87-77",
+                        "need_verification": false
+                    },
+                    {
+                        "kind": "email",
+                        "type": {
+                            "id": "email",
+                            "name": "Эл. почта"
+                        },
+                        "value": "yagami99@yandex.ru",
+                        "preferred": true,
+                        "contact_value": "yagami99@yandex.ru"
+                    }
+                ],
+                "real_id": "155288087",
+                "download": {
+                    "pdf": {
+                        "url": "https://api.hh.ru/resumes/c9ef2262000941821700562f60785657723343/download/%D0%9A%D1%83%D1%80%D0%B1%D0%B0%D0%BD%D0%BE%D0%B2%20%D0%A0%D1%83%D1%81%D0%BB%D0%B0%D0%BD.pdf?type=pdf"
+                    },
+                    "rtf": {
+                        "url": "https://api.hh.ru/resumes/c9ef2262000941821700562f60785657723343/download/%D0%9A%D1%83%D1%80%D0%B1%D0%B0%D0%BD%D0%BE%D0%B2%20%D0%A0%D1%83%D1%81%D0%BB%D0%B0%D0%BD.rtf?type=rtf"
+                    }
+                },
+                "language": [
+                    {
+                        "id": "rus",
+                        "name": "Русский",
+                        "level": {
+                            "id": "l1",
+                            "name": "Родной"
+                        }
+                    },
+                    {
+                        "id": "eng",
+                        "name": "Английский",
+                        "level": {
+                            "id": "b2",
+                            "name": "B2 — Средне-продвинутый"
+                        }
+                    }
+                ],
+                "platform": {
+                    "id": "headhunter"
+                },
+                "schedule": {
+                    "id": "remote",
+                    "name": "Удаленная работа"
+                },
+                "education": {
+                    "level": {
+                        "id": "master",
+                        "name": "Магистр"
+                    },
+                    "primary": [
+                        {
+                            "id": "48644772",
+                            "name": "Национальный исследовательский технологический университет \"МИСиС\" , Москва",
+                            "year": 2024,
+                            "result": "Экосистема больших данных для цифровой трансформации",
+                            "name_id": "39185",
+                            "result_id": null,
+                            "organization": "Институт информационных технологий и компьютерных наук",
+                            "education_level": {
+                                "id": "master",
+                                "name": "Магистр"
+                            },
+                            "organization_id": null,
+                            "university_acronym": "МИСИС"
+                        },
+                        {
+                            "id": "48644775",
+                            "name": "Уральский государственный экономический университет, Екатеринбург",
+                            "year": 2021,
+                            "result": "Математическое обеспечение и администрирование информационных систем",
+                            "name_id": "42741",
+                            "result_id": "11",
+                            "organization": "Институт Менеджмента и Информационных технологий",
+                            "education_level": {
+                                "id": "master",
+                                "name": "Магистр"
+                            },
+                            "organization_id": null,
+                            "university_acronym": "УрГЭУ"
+                        }
+                    ],
+                    "additional": [],
+                    "elementary": [],
+                    "attestation": []
+                },
+                "favorited": false,
+                "last_name": "Курбанов",
+                "portfolio": [],
+                "schedules": [
+                    {
+                        "id": "remote",
+                        "name": "Удаленная работа"
+                    }
+                ],
+                "skill_set": [
+                    "DWH",
+                    "Python",
+                    "Linux",
+                    "SQL",
+                    "Hadoop",
+                    "Apache Spark",
+                    "Apache Kafka",
+                    "Apache NiFi",
+                    "Apache Airflow",
+                    "Git",
+                    "pandas",
+                    "Bash",
+                    "Big Data",
+                    "Hive",
+                    "ETL",
+                    "Spark",
+                    "Работа с базами данных",
+                    "Airflow",
+                    "Kafka",
+                    "Unix",
+                    "Базы данных",
+                    "Математическая статистика",
+                    "Machine Learning"
+                ],
+                "birth_date": "1999-01-26",
+                "created_at": "2021-09-12T17:19:24+0300",
+                "employment": {
+                    "id": "full",
+                    "name": "Полная занятость"
+                },
+                "experience": [
+                    {
+                        "id": "1939669552",
+                        "end": null,
+                        "area": null,
+                        "start": "2024-09-01",
+                        "company": "Бюро 1440",
+                        "employer": {
+                            "id": "5266429",
+                            "url": "https://api.hh.ru/employers/5266429",
+                            "name": "Бюро 1440",
+                            "logo_urls": {
+                                "90": "https://img.hhcdn.ru/employer-logo/7174339.png",
+                                "240": "https://img.hhcdn.ru/employer-logo/7174340.png",
+                                "original": "https://img.hhcdn.ru/employer-logo-original/1388638.png"
+                            },
+                            "alternate_url": "https://hh.ru/employer/5266429"
+                        },
+                        "industry": null,
+                        "position": "Data Engineer",
+                        "company_id": "1838598",
+                        "industries": [
+                            {
+                                "id": "7.538",
+                                "name": "Интернет-провайдер"
+                            },
+                            {
+                                "id": "7.540",
+                                "name": "Разработка программного обеспечения"
+                            }
+                        ],
+                        "company_url": null,
+                        "description": "- Разработка и поддержка ETL-процессов для обработки телеком-данных (MinIO → Python/Polars → ClickHouse).\n- Создание и сопровождение абонентской модели: парсинг сегментов, генерация терминалов, расчёт дат подключения/отключения, работа с геоданными.\n- Подготовка и загрузка данных QoS-экспериментов\n- Автоматизация аналитических пайплайнов, оптимизация производительности, работа с большими объёмами данных (чанк-процессинг).\n- Разработка внутреннего Flask-приложения для расчётов выручки, подключение к ClickHouse и публикация на корпоративном сервере.\n- Интеграция данных с Postgres (геосправочники), подготовка DUCK-совместимых таблиц и маппинг сегментов.\n- Создание служебных инструментов для команды: парсеры, веб-скрейпинг, утилиты для геопоиска.\n\nТехнологический стек:\nPython (Polars, Pandas, PyArrow), ClickHouse, PostgreSQL, MinIO/Parquet, Airflow, Flask, Selenium, GitLab CI/CD,Matlab."
+                    },
+                    {
+                        "id": "1939669555",
+                        "end": "2024-09-01",
+                        "area": null,
+                        "start": "2023-08-01",
+                        "company": "Сбер",
+                        "employer": {
+                            "id": "3529",
+                            "url": "https://api.hh.ru/employers/3529",
+                            "name": "Сбер",
+                            "logo_urls": {
+                                "90": "https://img.hhcdn.ru/employer-logo-round/6865266.jpeg",
+                                "240": "https://img.hhcdn.ru/employer-logo-round/6865267.jpeg",
+                                "original": "https://img.hhcdn.ru/employer-logo-original-round/6865265.jpeg"
+                            },
+                            "alternate_url": "https://hh.ru/employer/3529"
+                        },
+                        "industry": null,
+                        "position": "Data Engineer",
+                        "company_id": "3529",
+                        "industries": [
+                            {
+                                "id": "43.647",
+                                "name": "Банк"
+                            }
+                        ],
+                        "company_url": "https://rabota.sber.ru/",
+                        "description": "•Создание стриминговых/батчевых ETL-процессов\n•Анализ данных, поиск источников данных для расчетов бизнес-метрик.\n•Создание и сопровождение витрин данных. \n•Мониторинг качества данных и инцидент менеджмент\n•Написание скриптов(Python/Spark) для обработки данных и AdHoc аналитики. \n•Автоматизация отчетности.\nТехнологический стек:\n•Hadoop (HDFS, HiveSQL, Hue, YARN)\n•Apache Spark\n•Python(pandas,nympy и др.)\n•SQL\n•Jupyter Notebook/Lab\n•Apache NiFi\n•Apache Kafka\n•Apache Airflow"
+                    },
+                    {
+                        "id": "1939669559",
+                        "end": "2023-08-01",
+                        "area": null,
+                        "start": "2022-04-01",
+                        "company": "Банк ВТБ (ПАО)",
+                        "employer": {
+                            "id": "4181",
+                            "url": "https://api.hh.ru/employers/4181",
+                            "name": "Банк ВТБ (ПАО)",
+                            "logo_urls": {
+                                "90": "https://img.hhcdn.ru/employer-logo-round/2369888.png",
+                                "240": "https://img.hhcdn.ru/employer-logo-round/2369889.png",
+                                "original": "https://img.hhcdn.ru/employer-logo-original-round/2369887.png"
+                            },
+                            "alternate_url": "https://hh.ru/employer/4181"
+                        },
+                        "industry": null,
+                        "position": "Data Engineer",
+                        "company_id": "4181",
+                        "industries": [
+                            {
+                                "id": "43.648",
+                                "name": "Управляющая, инвестиционная компания (управление активами)"
+                            },
+                            {
+                                "id": "43.647",
+                                "name": "Банк"
+                            }
+                        ],
+                        "company_url": "http://www.vtbcareer.com",
+                        "description": "Построение ETL-процессов. \nСоздание витрин данных. \nНаписание python- скриптов и sql-запросов. \nПоддержка работы КХД банка.\nДоработка и исправление прототипов витрин данных\nИсправление ошибок в ETL процессах построения витрин\nАвтоматизация отчётности. \nТехнологический стек:\n•Hadoop (HDFS, HiveSQL, Hue, YARN)\n•Apache Spark\n•Python(pandas,nympy и др.)\n•SQL\n•Jupyter Notebook"
+                    },
+                    {
+                        "id": "1939669567",
+                        "end": "2022-04-01",
+                        "area": {
+                            "id": "1",
+                            "url": "https://api.hh.ru/areas/1",
+                            "name": "Москва"
+                        },
+                        "start": "2021-09-01",
+                        "company": "Борлас, Консалтинговая группа",
+                        "employer": {
+                            "id": "222045",
+                            "url": "https://api.hh.ru/employers/222045",
+                            "name": "Борлас, Консалтинговая группа",
+                            "logo_urls": {
+                                "90": "https://img.hhcdn.ru/employer-logo-round/3051880.png",
+                                "240": "https://img.hhcdn.ru/employer-logo-round/3051881.png",
+                                "original": "https://img.hhcdn.ru/employer-logo-original-round/3051879.png"
+                            },
+                            "alternate_url": "https://hh.ru/employer/222045"
+                        },
+                        "industry": null,
+                        "position": "Data Engineer",
+                        "company_id": "222045",
+                        "industries": [
+                            {
+                                "id": "7.539",
+                                "name": "Системная интеграция, автоматизация технологических и бизнес-процессов предприятия, ИТ-консалтинг"
+                            }
+                        ],
+                        "company_url": "http://www.borlas.ru",
+                        "description": "Написание SQL-запросов к Oracle.\nДоработка и исправление прототипов витрин данных.\nПоиск ошибок существующих данных.\nТехнологический стек:\n• SQL\n• Oracle"
+                    }
+                ],
+                "first_name": "Руслан",
+                "relocation": {
+                    "area": [],
+                    "type": {
+                        "id": "no_relocation",
+                        "name": "не могу переехать"
+                    },
+                    "district": []
+                },
+                "updated_at": "2026-06-18T15:49:44+0300",
+                "certificate": [],
+                "citizenship": [
+                    {
+                        "id": "113",
+                        "url": "https://api.hh.ru/areas/113",
+                        "name": "Россия"
+                    }
+                ],
+                "employments": [
+                    {
+                        "id": "full",
+                        "name": "Полная занятость"
+                    }
+                ],
+                "has_vehicle": true,
+                "middle_name": null,
+                "travel_time": {
+                    "id": "any",
+                    "name": "Не имеет значения"
+                },
+                "work_format": [
+                    {
+                        "id": "REMOTE",
+                        "name": "Удалённо"
+                    }
+                ],
+                "work_ticket": [
+                    {
+                        "id": "113",
+                        "url": "https://api.hh.ru/areas/113",
+                        "name": "Россия"
+                    }
+                ],
+                "alternate_url": "https://hh.ru/resume/c9ef2262000941821700562f60785657723343",
+                "hidden_fields": [],
+                "paid_services": [],
+                "resume_locale": {
+                    "id": "RU",
+                    "name": "Русский"
+                },
+                "recommendation": [],
+                "specialization": [],
+                "employment_form": [
+                    {
+                        "id": "FULL",
+                        "name": "Постоянная работа"
+                    },
+                    {
+                        "id": "PART_TIME",
+                        "name": "Подработка"
+                    }
+                ],
+                "complaint_status": {
+                    "applicant_topics_are_hidden": false
+                },
+                "total_experience": {
+                    "months": 59
+                },
+                "can_view_full_info": true,
+                "professional_roles": [
+                    {
+                        "id": "40",
+                        "name": "Другое"
+                    }
+                ],
+                "contact_view_status": "FULL",
+                "driver_license_types": [
+                    {
+                        "id": "B"
+                    }
+                ],
+                "negotiations_history": {
+                    "url": "https://api.hh.ru/resumes/c9ef2262000941821700562f60785657723343/negotiations_history"
+                },
+                "business_trip_readiness": {
+                    "id": "never",
+                    "name": "Не готов к командировкам"
+                },
+                "contacts_open_until_date": "1970-01-21",
+                "experience_group_by_company": [
+                    {
+                        "duration": 23,
+                        "experience_ids": [
+                            "1939669552"
+                        ]
+                    },
+                    {
+                        "duration": 14,
+                        "experience_ids": [
+                            "1939669555"
+                        ]
+                    },
+                    {
+                        "duration": 17,
+                        "experience_ids": [
+                            "1939669559"
+                        ]
+                    },
+                    {
+                        "duration": 8,
+                        "experience_ids": [
+                            "1939669567"
+                        ]
+                    }
+                ],
+                "view_without_contacts_reason": null
+            }
+        },
+        {
+            "traffic_light": {
+                "id": "17961a4f0010a81b6100562f6077684d477449",
+                "candidate_name": "17961a4f0010a81b6100562f6077684d477449",
+                "title": "Руководитель направления инфраструктуры",
+                "location": "Сергиев Посад (Московская область)",
+                "color_score_percent": 1,
+                "requirements": [
+                    {
+                        "requirement": "Опыт разработки на Python от 4 лет в production-системах (PET и MVP без продакшена не рассматриваются)",
+                        "resume_evidence": "В резюме нет упоминаний о работе с Python",
+                        "match_percent": 0,
+                        "difference_comment": "Нет опыта работы с Python"
+                    },
+                    {
+                        "requirement": "Опыт работы с MPP аналитическими хранилищами данных: Arenadata HyperWave ИЛИ Greenplum / Vertica / Teradata / ClickHouse (DWH)",
+                        "resume_evidence": "В резюме нет упоминаний об опыте работы с MPP аналитическими хранилищами данных",
+                        "match_percent": 0,
+                        "difference_comment": "Нет опыта работы с MPP аналитическими хранилищами данных"
+                    },
+                    {
+                        "requirement": "Опыт работы с Hadoop / Data Lake стеком: Arenadata Hadoop ИЛИ Apache Hadoop (HDFS или Ozone)",
+                        "resume_evidence": "В резюме нет упоминаний об опыте работы с Hadoop / Data Lake стеком",
+                        "match_percent": 0,
+                        "difference_comment": "Нет опыта работы с Hadoop / Data Lake стеком"
+                    },
+                    {
+                        "requirement": "Опыт работы с SQL-движками: Impala ИЛИ Hive",
+                        "resume_evidence": "В резюме нет упоминаний об опыте работы с SQL-движками",
+                        "match_percent": 0,
+                        "difference_comment": "Нет опыта работы с SQL-движками"
+                    },
+                    {
+                        "requirement": "Опыт работы с Parquet",
+                        "resume_evidence": "В резюме нет упоминаний об опыте работы с Parquet",
+                        "match_percent": 0,
+                        "difference_comment": "Нет опыта работы с Parquet"
+                    }
+                ]
+            },
+            "resume_json": {
+                "last_name": "Мурадян",
+                "first_name": "Роман",
+                "middle_name": "Владиславович",
+                "title": "Руководитель направления инфраструктуры",
+                "created_at": "2026-06-17T09:44:34+0300",
+                "updated_at": "2026-06-18T16:57:14+0300",
+                "area": {
+                    "id": "2069",
+                    "name": "Сергиев Посад (Московская область)",
+                    "url": "https://api.hh.ru/areas/2069"
+                },
+                "age": 35,
+                "gender": {
+                    "id": "male",
+                    "name": "Мужской"
+                },
+                "salary": null,
+                "photo": null,
+                "total_experience": {
+                    "months": 186
+                },
+                "certificate": [],
+                "owner": {
+                    "id": "8701066",
+                    "comments": {
+                        "url": "https://api.hh.ru/applicant_comments/8701066",
+                        "counters": {
+                            "total": 0
+                        }
+                    }
+                },
+                "can_view_full_info": true,
+                "negotiations_history": {
+                    "url": "https://api.hh.ru/resumes/17961a4f0010a81b6100562f6077684d477449/negotiations_history"
+                },
+                "hidden_fields": [],
+                "actions": {
+                    "download": {
+                        "pdf": {
+                            "url": "https://api.hh.ru/resumes/17961a4f0010a81b6100562f6077684d477449/download/%D0%9C%D1%83%D1%80%D0%B0%D0%B4%D1%8F%D0%BD%20%D0%A0%D0%BE%D0%BC%D0%B0%D0%BD%20%D0%92%D0%BB%D0%B0%D0%B4%D0%B8%D1%81%D0%BB%D0%B0%D0%B2%D0%BE%D0%B2%D0%B8%D1%87.pdf?type=pdf"
+                        },
+                        "rtf": {
+                            "url": "https://api.hh.ru/resumes/17961a4f0010a81b6100562f6077684d477449/download/%D0%9C%D1%83%D1%80%D0%B0%D0%B4%D1%8F%D0%BD%20%D0%A0%D0%BE%D0%BC%D0%B0%D0%BD%20%D0%92%D0%BB%D0%B0%D0%B4%D0%B8%D1%81%D0%BB%D0%B0%D0%B2%D0%BE%D0%B2%D0%B8%D1%87.rtf?type=rtf"
+                        }
+                    }
+                },
+                "alternate_url": "https://hh.ru/resume/17961a4f0010a81b6100562f6077684d477449",
+                "id": "17961a4f0010a81b6100562f6077684d477449",
+                "download": {
+                    "pdf": {
+                        "url": "https://api.hh.ru/resumes/17961a4f0010a81b6100562f6077684d477449/download/%D0%9C%D1%83%D1%80%D0%B0%D0%B4%D1%8F%D0%BD%20%D0%A0%D0%BE%D0%BC%D0%B0%D0%BD%20%D0%92%D0%BB%D0%B0%D0%B4%D0%B8%D1%81%D0%BB%D0%B0%D0%B2%D0%BE%D0%B2%D0%B8%D1%87.pdf?type=pdf"
+                    },
+                    "rtf": {
+                        "url": "https://api.hh.ru/resumes/17961a4f0010a81b6100562f6077684d477449/download/%D0%9C%D1%83%D1%80%D0%B0%D0%B4%D1%8F%D0%BD%20%D0%A0%D0%BE%D0%BC%D0%B0%D0%BD%20%D0%92%D0%BB%D0%B0%D0%B4%D0%B8%D1%81%D0%BB%D0%B0%D0%B2%D0%BE%D0%B2%D0%B8%D1%87.rtf?type=rtf"
+                    }
+                },
+                "platform": {
+                    "id": "headhunter"
+                },
+                "employment_form": [
+                    {
+                        "id": "FULL",
+                        "name": "Постоянная работа"
+                    }
+                ],
+                "work_format": [
+                    {
+                        "id": "ON_SITE",
+                        "name": "На месте работодателя"
+                    }
+                ],
+                "real_id": "279452513",
+                "experience_group_by_company": [
+                    {
+                        "duration": 29,
+                        "experience_ids": [
+                            "1883965262"
+                        ]
+                    },
+                    {
+                        "duration": 43,
+                        "experience_ids": [
+                            "1883965306"
+                        ]
+                    },
+                    {
+                        "duration": 13,
+                        "experience_ids": [
+                            "1883965311"
+                        ]
+                    },
+                    {
+                        "duration": 9,
+                        "experience_ids": [
+                            "1883965318"
+                        ]
+                    },
+                    {
+                        "duration": 37,
+                        "experience_ids": [
+                            "1883965345"
+                        ]
+                    },
+                    {
+                        "duration": 19,
+                        "experience_ids": [
+                            "1883965355"
+                        ]
+                    },
+                    {
+                        "duration": 51,
+                        "experience_ids": [
+                            "1883965357"
+                        ]
+                    },
+                    {
+                        "duration": 16,
+                        "experience_ids": [
+                            "1883965367"
+                        ]
+                    },
+                    {
+                        "duration": 3,
+                        "experience_ids": [
+                            "1883965398"
+                        ]
+                    },
+                    {
+                        "duration": 3,
+                        "experience_ids": [
+                            "1883965405"
+                        ]
+                    },
+                    {
+                        "duration": 2,
+                        "experience_ids": [
+                            "1883965418"
+                        ]
+                    },
+                    {
+                        "duration": 3,
+                        "experience_ids": [
+                            "1883965433"
+                        ]
+                    },
+                    {
+                        "duration": 6,
+                        "experience_ids": [
+                            "1883965435"
+                        ]
+                    }
+                ],
+                "resume_locale": {
+                    "id": "RU",
+                    "name": "Русский"
+                },
+                "skills": "Большой опыт в IT-разработке и управлении\nДиплом и опыт по информационной безопасности\n\nОпыт оптимизации организационных, бизнес, Agile и CI/CD-процессов.\nЕсть проработанная система организации процесса разработки, которая позволяет бизнесу получить требуемый функционал в срок, оценивать KPI и мотивировать сотрудников. В системе учтены все аспекты разработки.\n\nОпыт в нефтегазовой отрасли: с 2023 года.\nОпыт работы с ERP-системами: с 2014 года.\nОпыт в e-commerce: с 2012.\nОпыт в IT-разработке: с 2011 года - более 15 лет.\n\nО себе дополнительно:\nРазвиваю аддитивный кроссязыковой фреймворк, который покрывает основные кейсы корпоративной разработки и предоставляет готовые решения для построения проектов в корпоративном контуре\n\nРазработана концепция IT-интегратора нового поколения\n    • Выращивание кадров из вузов\n    • Карьерные траектории и масштабируемая структура - обеспечивают ротацию между проектами, параллельные карьерные треки с возможностью перехода\n    • Единая технологическая платформа\n    • Система наставничества, обучения и независимой аттестации\n    • Управление DevSecOps и безопасностью приложений - shift left и security first\n    • Управление проектами и коллективом\n    • Управляемость компании: прозрачность, масштабируемость и контроль\n    • Корпоративная архитектура\n    • Управление бюджетированием и финансовыми потоками\n    • Коммерциализация\n    • Ключевые показатели эффективности\n    • Управление изменениями (чейнджеры)\n    • OKR\n    • Принципы работы с заказчиками и субподрядчиками\n    • Риски внедрения и защитные механизмы\n    • Соответствие стандарту PMBOK® (Project Management Body of Knowledge)\n\n\nРазработал идею и прототип системы цифрового двойника, который включает:\n    • Систему корпоративного моделирования\n    • Инструменты для маневренности холдинга\n        ◦ BPM-конструктор и Low-code конструктор\n        ◦ Полная автоматизация всех согласований и задач через единое процессное ядро\n        ◦ Идеальная наблюдаемость\n        ◦ Аналитика по процессам\n    • Использование ИИ для всей компании и сотрудника\n        ◦ ИИ-ассистент для бизнеса\n        ◦ ИИ-ассистент для сотрудника\n    • ERP 2.0 — Платформу для совместной коммерции\n        ◦ Государственная витрина вызовов\n        ◦ Маркетплейс готовых решений\n        ◦ Витрина LLM-моделей и обезличенных данных\n        ◦ Обмен BPMS-процессами, блокчейн-паспортами оборудования, архитектурными моделями и ИИ-агентами\n\n                                                                               Навыки по областям:\n\nПОСТРОЕНИЕ AI/ML-СИСТЕМ (СИСТЕМ С ИСКУССТВЕННЫМ ИНТЕЛЛЕКТОМ)\nИзучил мульти-агентный подход к построению AI-систем (MAS), цикл ReAct.\nТакже знаком с принципами CodeGen agents, Long-term memory (RAG + GraphDB) и инструментами LangGraph, CrewAI, PydanticAI. Использую Tool-use, Ollama.\n\n    1. Разработан готовый шаблон проекта fastapi/django + AI/ML\nПрактически все готово для локальной разработки.\nDocs as code.\nРазвертывание в пару команд - make setup && make run.\nВсе docker-изовано.\n\nОсобенности:\n        ◦ ✅ Полная документация API\n        ◦ ✅ Валидация Pydantic\n        ◦ ✅ PostgreSQL с SQLAlchemy 2.0 (асинхронный)\n        ◦ ✅ Миграции через Alembic\n        ◦ ✅ Автоматическое форматирование кода (Black, isort, ruff)\n        ◦ ✅ Pre-commit хуки (detect-secrets, mypy, ruff)\n        ◦ ✅ Тестирование с покрытием (pytest, pytest-cov)\n        ◦ ✅ ML-модуль\n            ▪ Чистая архитектура\n            ▪ Поддержка staging (исключение тестовых данных)\n            ▪ Безопасный seed для локальной разработки\n            ▪ PSI-мониторинг дрейфа\n            ▪ Дообучение при дрейфе > 0.1\n        ◦ ✅ MLFlow для хранения истории и выбора эксперимента\n        ◦ ✅ Airflow для управления и оркестрирования процессом дообучения на свежих данных и автоматического деплоя\n        ◦ ✅ Контейнеризация\n\n    2. Разработан помощник разработчика\nСоздал прототип системы, которая умеет самостоятельно писать программный код и участвовать в развитии проектов компании, а также использоваться для других целей. Система вендоронезависимая и построена на принципах чистой архитектуры.\nСистема AI-ассистент\n        ◦ Умеет общаться и отвечать на вопросы.\n        ◦ Умеет создавать проекты с нуля на любом языке программирования.\n        ◦ Пишет код и формирует коммиты. Отправляет мердж-реквест в удаленный репозиторий.\n        ◦ Умеет исправлять замечания к написанному коду, задавать вопросы и реализует другие правки в рамках мердж-реквеста.\n        ◦ Умеет работать как локальный ассистент разработчика на его рабочем месте.\nСистема интегрирована с Git, Gitlab, LLM, Kafka через универсальные адаптеры, что позволяет со временем заменить интеграцию на другую, не меняя всю систему.\n\nРаботает\n        ◦ в терминале - кладем задачу в папку tasks, запускаем агент и получаем результат\n        ◦ через UI - есть разные сценарии и воркфлоу (например, создание программного продукта)\n        ◦ в мердж-реквесте - отвечает на вопросы и комментарии, пишет код. Пишешь комментарий с замечаниями или требованиями - отвечает коммитом.\n        ◦ в IDE\n\nТехнологии: django, pandas, plotly, poetry\n\nBIGDATA СТЕК\nS3\nClickhouse\nApache HDFS, Hadoop, Hive, Kafka, Spark, parquet\n\nОРГАНИЗАЦИОННЫЙ СТЕК\nСитуационное лидерство\nУправление многокомандной разработкой\n\nАРХИТЕКТУРНЫЙ СТЕК\n- DDD + Чистая архитектура\n- TOGAF, Archimate\n- Знаком с C4Model, BPMN, UML, IDEF0\n\nТЕХНОЛОГИЧЕСКИЙ СТЕК\n- Rabbit MQ, Kafka\n- Redis\n- SSO KeyCloak, JWT-авторизация, OAuth 2.0 Token Exchange\n- Docker, Docker Compose\n- Maven, Gradle, Composer, poetry\n- Git\n- Поисковые движки Elastic, Sphinx\n- Websocket-сервер Centrifugo\n- Backend-фреймворки Spring, Django, Symfony, Laravel, знаком с fastapi\n- Angular, React\n- ИИ-агенты\n\nЯЗЫКИ\nБекенд: Python, Java, Kotlin, Golang, Php, Groovy, Shell\nФронтенд: Typescript, Javascript\nВерстка и разметка: HTML, CSS, SCSS\n\nCI/CD\nGitlab CI, Jenkins и azureDevops\n\nИНФРАСТРУКТУРА\nOKD (OpenShift)\nVMware Cloud\nKubernetes\n\nПОСТРОЕНИЕ ЦОД\nНадежность, отказоустойчивость, N+1 резервирование \nПрограммное управление: Ip-фабрика, SDN-контроллер, VxLAN\nСредства защиты: NGFW, IPS (Intrusion Prevention System), защита от DDoS, Service Appliance Leaf\nАрхитектура: Spine - Leaf архитектура\nОхлажение: Холодный коридор, холодная стена, in-row кондиционирование, чиллеры с фрикулингом, RDHx\nЭлектроснабжение: ИБП-кластер, ДГУ\nСоединения: Оптика и DAC\nВиртуальные сервера: VMware / KVM.\nОркестрация контейнеров: Docker, Kubernetes\nАвтоматизация окрестрации: helm\nПлатформа оркестрации: Deckhouse\nОверлейные сети (VxLAN/GRE/IPIP) - фундамент для Kubernetes и облачных сред.\nVPN (Virtual Private Network)\nСерверы с технологией CXL\nХранение данных: SAN + fibre channel, NAS\nОптимизация хранения: Дедупликация\nМониторинг \"здоровья\" всего ЦОД: Сбор метрик Prometheus, Grafana визуализация.\n\nUI/UX, web-design\nБольшой опыт самостоятельного построения и аудита UI/UX в веб-проектах\nМогу самостоятельно сформировать web-design проекта\n\n3D-МОДЕЛИРОВАНИЕ\nОбладаю навыками 3d-моделирования в blender\n\nОБЩИЕ НАВЫКИ\nРуководство\nНавыки презентации\nОпыт обучения стажеров",
+                "citizenship": [
+                    {
+                        "id": "113",
+                        "name": "Россия",
+                        "url": "https://api.hh.ru/areas/113"
+                    }
+                ],
+                "work_ticket": [
+                    {
+                        "id": "113",
+                        "name": "Россия",
+                        "url": "https://api.hh.ru/areas/113"
+                    }
+                ],
+                "birth_date": "1990-11-15",
+                "education": {
+                    "level": {
+                        "id": "higher",
+                        "name": "Высшее"
+                    },
+                    "primary": [
+                        {
+                            "id": "17931015",
+                            "name": "Московский финансово-промышленный университет \"Синергия\", Москва",
+                            "organization": "Информационные системы",
+                            "result": "диплом по инф. безопасности",
+                            "year": 2017,
+                            "university_acronym": "Университет «Синергия»",
+                            "name_id": "39280",
+                            "organization_id": null,
+                            "result_id": null,
+                            "education_level": {
+                                "id": "higher",
+                                "name": "Высшее"
+                            }
+                        },
+                        {
+                            "id": "17931022",
+                            "name": "Государственный университет управления, Москва",
+                            "organization": "Институт информационных систем управления.",
+                            "result": "прикладная информатика в управлении",
+                            "year": 2011,
+                            "university_acronym": "ГУУ",
+                            "name_id": "39578",
+                            "organization_id": "25288",
+                            "result_id": null,
+                            "education_level": {
+                                "id": "higher",
+                                "name": "Высшее"
+                            }
+                        }
+                    ],
+                    "additional": [],
+                    "attestation": [],
+                    "elementary": []
+                },
+                "employment": {
+                    "id": "full",
+                    "name": "Полная занятость"
+                },
+                "employments": [
+                    {
+                        "id": "full",
+                        "name": "Полная занятость"
+                    }
+                ],
+                "experience": [
+                    {
+                        "id": "1883965262",
+                        "start": "2024-03-01",
+                        "end": null,
+                        "company": "Крупный интегратор IT-решений",
+                        "company_id": null,
+                        "industry": null,
+                        "industries": [],
+                        "area": null,
+                        "company_url": null,
+                        "employer": null,
+                        "position": "Руководитель направления разработки",
+                        "description": "ПРОЕКТ АСКТД (Автоматизированная система контроля трудовой дисциплины и инц. безопасности)\nдля\nГазпромнефть НТЦ\nМорнефтегазпроект\n\nКонтроль деятельности сотрудников и дисциплины. Отчеты и аналитика.\nКонтроль инцидентов безопасности.\n\nИнтеграция 1С ЗУП\nИнтеграция СКУД (СП, Тюмень)\nИнтеграция с Active Directory\n\n\n\nПРОЕКТ Ямал АССД\nАвтоматизированная система контроля и управления доступом для ООО «Газпромнефть Ямал».\n\nВключает СКУД, Учетную систему и BPMS.\n\nСистема позволяет\n    - обрабатывать заявки подрядчиков на доступ к объектам заказчика\n    - учитывать различные специальности и виды работ, документы, необходимые для выполнения данных работ, и сроки их действия\n\nПодрядчик может подавать заявки на ТС, сотрудников и ТМЦ.\nСотрудник может работать в нескольких организациях, поэтому пропуск может быть составной.\nПредставители Газпромнефть ЯМАЛ согласовывают заявки и выпускают пропуска.\n\nТакже можно:\n\n    - распечатать пропуск\n    - аннулировать пропуск\n    - считать штрих код и пропустить сотрудника\n    - посмотреть журнал перемещений\n    - посмотреть список действий с любым объектом (журнал аудита)\n    - и многое другое\n\n\nСистема обслуживает более 50 объектов на Новопортовском месторождении\nЭто кустовые площадки, где ведется добыча нефти\nВертолетная площадка\nПриемо-сдаточные пункты нефти\nЦентральный пункт сбора\nАдминистративно бытовые комплексы\nГазо-турбинная электростанция\n\nПо данным с прода в системе\n>60 объектов доступа\nБолее 17000 не архивных сотрудников\nБолее 350 подрядчиков в системе\nВ среднем согласуется 3000 заявок в месяц\n\n\n\n\nНа данном последнем проекте удалось сделать очень много.\n\nВ частности,\n    - заменить фреймворк ушедшего подрядчика на новый свой собственный\n    - реализовать функционал автоматического старта вахты и межвахтового отдыха\n    - и другие задачи\n    - а также на основе фреймворка начать строить Low-code платформу по просьбе заказчика (он запросил конструктор отчетов в рамках бизнес-задач следующего года)\n\n\n\n\n\n\nПРОЕКТ Импортозамещение SAP\n\nОбеспечение независимости дочерних компаний от иностранного ПО. Участие в проекте Импортозамещения АСУЗ в одном из дочерних предприятий - Газпромнефть Снабжение.\n\nРазвитие отечественной системы для согласования любых документов в рамках бизнес-процессов заказчика.\n\nСостав команды модуля (11 чел):\nСистемный анализ - 1 чел\nБекенд - 4 чел\nФронтенд - 3 чел\nТестирование - 3 чел\n\nРазработана система согласования.\nРазработано универсальное решение для разработки корпоративных приложений Ecosystem Framework.\nРазработан список предложений по оптимизации работы бизнеса: внедрение low-code системы вместе с отечественной системой для оптимизации закупок.\n\n\nФреймворк Ecosystem\nФреймворк помогает ускорить доставку бизнес-ценности в группе команд в 2 раза за счет ряда инновационных решений, которые на данный момент не найдены в мировой практике.\n\nОбеспечивает безопасность приложения автоматизированно, включая следующие области:\nЗИС Защита информационной (автоматизированной) системы и ее компонентов\nЗИС.3.1 Распределение средств защиты информации по разным уровням (эшелонам) защищаемой системы\nАвтоматизированное блокирование попыток написания небезопасного кода:\nРазграничение видимости между компонентами системы. \nАвтоматическая блокировка работы в формате Service Locator.\nБлокирование работы с данными через функции serialize / deserialize\nна уровне хранения (Redis и файловой хранилище) и передачи по сети (AMQP).\n\nЗИС.8 Сокрытие архитектуры и конфигурации информационной (автоматизированной) системы\nАвтоматическое удаление критичной информации из среды выполнения приложения.\nБезопасность от получения доступов в БД и другие сервисы инжектированным вредоносным кодом.\nСокрытие критичных данных в ответе сервера. 5 слоев исключений.\n \nИНЦ. Реагирование на компьютерные инциденты. \nИНЦ.1.1 Выявление компьютерных инцидентов. Сбор и первичная обработка информации, поступающей от источников событий информационной безопасности\nСистема CEF-логирования событий ИБ. \n\t\nОЦЛ. Обеспечение целостности\nОЦЛ.2 Контроль целостности информации\nОбеспечение целостности информации при транзакциях в распределенной системе\n\nОЦЛ.4 Контроль данных, вводимых в информационную (автоматизированную) систему\nУскоренная валидация данных по сравнению со стандартным механизмом\n\nОЦЛ.6 Обезличивание и (или) деидентификация информации\nМаскировка токенов в логах приложения.\n \nАУД.2 Анализ уязвимостей и их устранение\nАУД.2.1 Выявление (поиск) уязвимостей, связанных с ошибками кода в программном (микропрограммном) обеспечении …\nАвтоматическая проверка и исправление ошибок безопасности, допущенных в коде.\n\n\nПРОЕКТ АГАВА\nРасчет признаков на основе экспресс-оценки контрагента - покупателя нефти, газа, нефтепродуктов.\n\n\nПРОЕКТ ПРОФЕССИОНАЛЫ 4.0\nПроект Профессионалы 4.0 состоит из многих частей, в том числе:\n    - Основной фронтенд проекта (Node.js, Yarn, React, Next.js)\n    - Админ. раздел (Node.js, Yarn, React, Vite)\n    - Единый бекенд / BFF — backend for frontend (JVM, Kotlin, Spring 6, Spring Boot)\n    - Telegram-бот (PHP, Laravel)\n    - Web-chat (Node, Yarn, React)\n    - Mattermost (Golang, коробочная платформа)\n    - Портал «Атлас удаленки» — Bitrix (PHP, коробочная платформа Bitrix) и др.\n    - Мобильные приложения (iOS, Android)"
+                    },
+                    {
+                        "id": "1883965306",
+                        "start": "2020-09-01",
+                        "end": "2024-03-01",
+                        "company": "Электронная торговая площадка Газпромбанка",
+                        "company_id": "1111946",
+                        "industry": null,
+                        "industries": [
+                            {
+                                "id": "7.539",
+                                "name": "Системная интеграция, автоматизация технологических и бизнес-процессов предприятия, ИТ-консалтинг"
+                            }
+                        ],
+                        "area": {
+                            "id": "1",
+                            "name": "Москва",
+                            "url": "https://api.hh.ru/areas/1"
+                        },
+                        "company_url": "http://etp.gazprombank.ru",
+                        "employer": {
+                            "id": "1111946",
+                            "name": "Электронная торговая площадка Газпромбанка",
+                            "url": "https://api.hh.ru/employers/1111946",
+                            "alternate_url": "https://hh.ru/employer/1111946",
+                            "logo_urls": {
+                                "240": "https://img.hhcdn.ru/employer-logo/7315342.png",
+                                "original": "https://img.hhcdn.ru/employer-logo-original/1423923.png",
+                                "90": "https://img.hhcdn.ru/employer-logo/7315341.png"
+                            }
+                        },
+                        "position": "Технический руководитель направления",
+                        "description": "Работа над iSource - инновационной цифровой закупочной экосистемой.\n\nКлючевые бизнес-показатели:\n- Рост выручки организации в 2 раза.\n- Рост выручки ключевого заказчика Экосистема iSource в 6.5 раз\n- Разработан ключевой продукт экосистемы – Processor – российская SRM-система для управления закупками и отношениями с поставщиками.\nПродукт входит в ТОП-3 по функциональным возможностям среди отечественных решений (рейтинг консалтинговой компании «Технологии Доверия» (ex. PwC).\nПризнан наиболее динамично развивающимся SRM-решением 2023 года (рейтинговое агентство «РАЭКС-Аналитика»).\nПроработана архитектура, которая позволяет эффективно тиражировать продукт в формате он-премис.\n\n\nО себе:\nМаксимально ориентирован на результат, стараюсь помочь каждому сотруднику осознать свою значимость в общем деле и понять стратегические цели. \nВнедряю ключевые ценности фреймворка SAFe - согласованность, прозрачность, уважение к людям, постоянный рост. \nАвтоматизирую и оптимизирую поток бизнес-ценности.\nОбучаю сотрудников, создаю и провожу презентации, обучаюсь фасилитации групповых мероприятий, стараюсь создавать мотивирующую и позитвную атмосферу.\nЗаписываю мотивационно-обучающие ролики для команд потока.\n\n\nАрхитектура:\nВладею TOGAF, Archimate\nВладею подходами DDD и Чистая архитектура\nЗнаком с BPMN, UML, C4 Model и IDEF0\n\n\nИБ:\nИмею опыт и диплом по информационной безопасности. Знаком с SSDLC и DevSecOps.\n\n\nОрганизация работы:\nИзучил и использую Lean-Agile подходы для оптимизации работы компании:\n- Scaled Agile фреймворк SAFe,\n- принципы Lean-Agile лидерства,\n- Learning Agility,\n- Agile-мероприятия для группы команд (ART),\n- принципы выделения потоков разработки ценности,\n- принципы повышения мотивации команд и оценки KPI.\n\nПостоянно развиваю свои навыки, а также хард и софт-скилы подчинённых.\n\nМотивирую, организую командную работу в отделе, учу нести командную ответственность за сроки проекта.\nМоя команда делает все, чтобы сдать свои задачи в срок.\n\n\nОбязанности:\nУправление отделом, состоящим из двух команд проекта Reserve iSource (бекенд, фронтенд, системный анализ, бизнес-анализ, QA).\nПроект включает несколько направлений: Виртуальный склад, Единый каталог, Резерв, Партнер. Все направления унифицированы и оптимизированы для легкого разворачивания на локальных стендах подчиненных.\nДобавление новых бизнес-функций.\nПроведение аудитов безопасности.\n\n\nРезультат:\nВсе задачи решены в срок.\nМотивация команды на 2 месте среди всех команд экосистемы iSource.\n\n\nВесь опыт в компании:\n2024 год\n- Управление двумя командами продукта Reserve\n- Обучение двух стажеров\nМои стажеры единственные из потока успешно прошли внутренний экзамен и приняты в контур ГПН (АО «Айсорс»).\n- Помощь в передаче продукта Процессор в контур заказчика Газпромнефть.\nУлучшение инф. безопасности решения. Устранены потенциальные уязвимости:\nOWASP - A04 CWE-73 - Arbitrary File Copying\n/ Arbitrary File Creation / Arbitrary File Deletion / Arbitrary File Modification / Arbitrary File Reading / Local File Inclusion\nOWASP - A08 CWE-502 Deserialization of Untrusted Data\nOWASP - A03 CWE-94 Remote Code Execution\nOWASP - A03 CWE-98 Remote File Inclusion\nOWASP - A10 CWE-918 Server-Side Request Forgery\nOWASP - A05 CWE-611 External Entity\n\n\n2023 год\nРуководил разработкой одного из модулей продукта Процессор - Планирование. Интеграция с оркестратором бизнес-процессов Camunda.\n\nОбеспечивал бесперебойную закупочную деятельность заказчика Руссдрагмет. Интеграции с SAP, 1С, Шина SAP, Tessa, ЭТП ГПБ, 3 закупочных модуля.\n\nРазработал MVP-версию Сервиса Согласования.\nСервис позволяет согласовывать документы в рамках группы компаний клиента в любых бизнес-процессах.\nНаписан по методологии DDD + Clean Architecture.\n\nИспользуемые принципы:\n    1. Соблюдение принципов DDD + Clean Architecture\nУровень домена полностью независим от реализации.\nРеализация независима от пакетов и внешних сервисов.\nВ приложения, как и на доменном уровне, используются только интерфейсы из доменного уровня и конструкции, которые необходимы для работы приложения.\nЗа подстановку сервисов вместо интерфейсов отвечает Dependency Injection.\nКомпоненты программы общаются с помощью событий.\nИспользуется богатая доменная модель.\n\n    2. Сокрытие данных\nВсе свойства по умолчанию private. В объектах создаются только конструкторы и геттеры. Сеттер только в случае необходимости только на конкретные свойства\n\n    3. Стандарты отрасли: SOLID, DRY, KISS, YAGNI. \n\n    4. Стандарты PSR.\nНасколько возможно, все завязано на интерфейсах PSR для быстрой заменяемости пакетов.\nФорматирование кода по PSR-12.\n\n    5. Аннотированные команды приложения.\nВсе API-запросы преобразуются в объекты команд.\nОбъекты содержат не только список полей запроса, но API-документацию и правила валидации — все в одном месте.\n\n    6. Единый формат ответа.\nВсе ответы на запросы содержат стандартизированный набор полей.\nСписок ошибок разделен на два списка: ошибки бизнес-логики и ошибки валидации.\n\n    7. Подход DDD адаптирован и улучшен для ускорения разработки.\nОтдельные классы для параметров (Value-object) сущности (Aggregate) реализуются только если это enum. Так сделано, чтобы не сильно расширять кодовую базу и не повышать порог вхождения в проект.\n\n    8. В проекте обеспечена 100%-ная строгая типизация.\nИспользуются только объекты и массивы однородных скалярных данных.\n\nДля хранения списков объектов используются не массивы, а строго-типизированные коллекции. \n\nПрограммистам не нужно нигде писать для таких коллекций phpDoc, потому что они сделаны с указанием php Generic-template. IDE сама подхватывает хранимый в них тип данных.\n\nКод коллекции состоит из одной строки — разрешенный тип данных.\nАналогично сделано и для фабрик сущностей.\n\n    9. В фабрике сущностей не нужно указывать ничего, кроме типа сущности и типа её коллекции.\nОна умеет преобразовывать любой тип данных в сущность, и при ошибке выбрасывает ошибку.\n\nФабрика сущностей - единая точка входа для создания объекта домена конкретного типа.\n\n    10. В запросы к сервисам экосистемы автоматически подставляется служебный токен приложения.\n\n    11. Каждый ответ на запрос содержит уникальный Id запроса, по которому можно произвести анализ связанных логов.\n\n    12. Используется доработанная версия бандла для API-документации, которая умеет корректно преобразовывать объекты в список аргументов GET-запроса.\n\n    12. Запланирован перенос команд API в sdk проекта, таким образом, что все продукты экосистемы смогут использовать те же самые объекты, что и само приложение, для взаимодействия с сервисом.\n\n    13. Запланирован вывод общеиспользуемых наработок (папка /Shared) в экосистемный бандл, который ускорит разработку новых сервисов экосистемы и поможет ускорить доработку существующих.\n\n\nТакже в контуре isource:\nПомог ускорить насколько возможно процесс разработки в команде Модуля Планирования:\n\nУчаствовал в нагрузочном тестировании сервиса Планирования. Помог выполнить нагрузочное тестирование в срок, за 2 дня подготовил версию модуля, которая использовала вместо интеграций с хабом, кейклоком и элементом тестовые моки.\n\nВ модулях Планирование, Закупки и Договора сделал точно в срок все критичные задачи, чтобы вывести Группу РДМ в продакшн.\n\n\n\n2022 год\nСделали проект «спец. ЭТП» для закрытых закупок группы компаний Газпром. Проект включает защищенный документооборот для подключения к площадке и выдачу VPN-доступа.\nПроект прошел государственную аккредитацию, таких ЭТП в России всего 3 (Распоряжение Правительства Российской Федерации от 23.11.2022 № 3574-р).\n\n\n\n2021-2022 год\nРуководство разработкой серверной составляющей  Единого Личного кабинета Электронной Торговой Площадки (ЕЛК ЭТП ГПБ). Объединение всех разрозненных сервисов площадки в единую экосистему. \n- Единая точка входа (keycloak sso)\n- Биллинг\n- Бесшовные переходы между сервисами\n- Интеграции и бесшовные переходы во внешние системы\n- Почтовые уведомления и рассылки\n- Аналитика\n\n\nДОСТИЖЕНИЯ:\nРуководил командой проекта Хаб. \n\nПеревели Хаб с zend на Symfony.\n\nРазработали sso для экосистемы на основе keycloak — написали кастомные id-провайдеры для входа через Госуслуги и с использованием ЭЦП.\n\nНаписал бесшовные переходы между ЭТП ГПБ и ГПБ Бизнес Онлайн по Oauth 2.0 Token Exchange.\n\nНаписал и встроил в сборку проекта многопоточный запуск автотестов на go с мерджем результатов и оценкой общего уровня покрытия.\n\nПеревели проект ЕЛК с ruby на Symfony.\n\n\nИТОГО\n\nЯ лично участвовал в разработке всех решений: на Java, Go и php.\n\nПолностью автоматизировал все проверки в pipeline CI:\n- многопоточный запуск автотестов\n- проверка покрытия\n- статический анализ кода\n- проверка настроек сервера и протокола tls, проверка валидности ssl-сертификата\n- проверка контейнеров, среды и пакетов\n\nВ процессе работы 3 или 4 раза прошли проверку ИБ.\n\nИмею диплом по информационной безопасности, поэтому сам демонстрировал защиту приложения от атак «на живую». Знаю, что и как нужно настраивать в Docker-файлах, в конфиге, в параметрах tls и как писать код безопасно, не только, чтобы пройти проверку, но чтобы решение было действительно безопасным.\n\n\nИБ\n\nПроект подготовлен к проверке ИБ, просканирован на уязвимости и ошибки. \nРяд мер, предпринятых для обеспечения безопасности системы:\n1. Все docker-образы, используемые на тестовых и продакшн-окружениях, подгружаются из специального harbor-хранилища, где они проверены на уязвимости сканером harbor.\n2. Это подписанные образы, они доступны только с серверов на которых происходит деплой приложения.\n3. Контейнеры, построенные на основе этих образов, проверяются инструментом aquasec/trivy в рамках CI.\n4. Cписок используемых приложением php-пакетов (composer.json) проверяется с помощью утилиты roave/security-advisories. Утилита использует Базы уязвимых пакетов.\n5. Для статической проверки кода используется анализатор vimeo/psalm.\n6. Для проверки корректности функционирования приложения и защиты от атак также используются автотесты, построенные на основе тестового фреймворка Codeception. Тесты проверяют не только корректность работы функционала, но и защиту от инъекций.\n7. Код проекта покрыт автотестами более, чем на 80%.\n8. Обеспечение подлинности сетевых соединений реализовано в соответствии с требованиями ЗИС-11 (приказ ФСТЭК России от 25.12.2017 N 239).\n- Для взаимодействия между сервисами всегда используется протокол https.\n- Https функционирует поверх криптографического протокола TLS, SSL отключен.\n- Надежность протокола TLS, SSL-сертификата и настроек сервера проверяется в CI.\n- Надежность протокола TLS обеспечена используемыми шифрами, все из них являются стандартами де-факто в отрасли. Алгоритм ChaCha20-Poly1305 помимо прочего используется Cloudflare.\n\nПо результату 3-кратно была пройдена проверка ИБ.\nБыли продемонстрированы описанные решения. Была проведена демонстрация защиты от атак для большинства решений.\nПроведен доклад по информационной безопасности проекта на основе требований безопасности (OWASP 2021 Top 10) для руководителей групп разработки.\n\n\nОПТИМИЗАЦИИ\n\nДля ускорения тестирования почтовых рассылок развернут интерфейс Mailcatcher - сервис, который позволяет посмотреть результаты рассылки в одном окне, что очень удобно для QA.\n\nНаписание автотестов ускорено за счет повышения приоритета функциональных тестов. Такой подход позволяет добиться 100%-покрытия кода при наличии только одного теста на функционал.\n\nПочти с нуля построены процессы CI\n- многопоточный запуск автотестов, написанный мной на Golang\n- мердж результатов запуска и проверка общего процента покрытия кода\n- проверка наличия узязвимостей в composer и Docker-файлах\n- проверка ssl-настроек сервера\n- статическая проверка кода\n\n---\n\nТехническая составляющая проектов:\nSymfony\nAngular\nkeyCloak\nPostgreSql\nRabbit MQ\nCodeception, phpunit\nMonolog\nComposer\nGit.\n\nРазвертывание:\nKubernetes\nHarbor\nHelm\nDocker\nGitlab Ci\n\nТестирование: Codeception, TestRail\nДокументация: Open API (Swagger)\nКеш: Redis\nМониторинг: Zabbix, Grafana\nЛоги: Kibana\n\nЯзыки программирования и разметки - PHP 7.4-8.2, Java, Javascript, Typescript, html, SCSS, CSS, Golang используется в CI."
+                    },
+                    {
+                        "id": "1883965311",
+                        "start": "2019-09-01",
+                        "end": "2020-09-01",
+                        "company": "KT.TEAM",
+                        "company_id": null,
+                        "industry": null,
+                        "industries": [],
+                        "area": null,
+                        "company_url": "https://www.kt-team.ru",
+                        "employer": null,
+                        "position": "Ведущий инженер-программист",
+                        "description": "Работа по Agile в крупном российском интеграторе KT.TEAM.\n\nЕжедневный созвон, планирование задач на день.\nНа каждом митинге - Отчет по сделанной работе, план на сегодня, риски неукладывания в срок.\nРегулярное планирование задач на спринт.\nОценка задач в составе команды.\n\nОбязанности:\nОценка и реализация задач, включая автоматические тесты реализованного функционала.\nДеплой на тестовый сервер, демонстрация внутреннему заказчику.\nАнализ текущего функционала сайта, текущей структуры кода и предложение вариантов оптимизации и возможных решений текущих проблем.\n\n1. Работа над проектом MEGA-ONLINE (от IKEA).\n\n---\nОптимизации:\n---\n\nЗа время работы сделаны следующие оптимизации на проекте:\n- проанализировано и описано каждое из cron-заданий.\n* Помогло оптимизировать нагрузку на сервере и определить, какие задания выполняются с какой периодичностью.\n* Помогает программистам, приходящим на проект, понять, какое cron-задание за что отвечает. Сходу это непонятно.\n* Экономит время программистов на анализ и изучение сайта.\n\n- Настроен gitlab ci, чтобы корректно возвращались результаты всех этапов сборки при деплое. Проблема была связана с использованием ssh в рамках этапов сборки.\nВ результате произведенных изменений деплой на тест и на прод корректно отражает свой статус.\nЭто экономит время тимлида проекта, который проверяет код и запускает pipeline для деплоя. Ему не нужно заходить внутрь каждого этапа и смотреть, выполнился ли он корректно или нет.\n\n- Unit-тесты, интеграционные тесты, W3c-тесты, end-to-end cypress тесты разделены в отдельные этапы gitlab pipeline.\n\n- Решена проблема, из-за которой на тестовом сайте не работал автоматический редирект на сайты арендаторов площадки - самый важный функционал.\n\n- Начаты работы по переводу продакшн-сервера на docker.\n\n---\nФункциональные задачи.\n---\n\nРабота над внедрением нового дизайна в команде под управлением Тим.лид, реорганизация кода, исправление ошибок. написание end-to-end тестов cypress и бэкенд-тестов с помощью PHPUnit.\n\nЗа время работы над торговой площадкой mega.ru/online/ сделано: внедрен новый дизайн, совместно с другими разработчиками реализованы сложные трехуровневые меню, фильтры каталога, лендинг-страницы для фильтрации товаров конкретной Меги, доработан импорт товаров через платформу Admitad и прочее.\nРешены проблемы и устранены недоработки верстки, предоставленной внешним подрядчиком.\nНастроен автоматический импорт промокодов и купонов из системы Admitad (модуль Bitrix).\n\n2. Работа над внутренним проектом компании - внутренней CRM Bitrix24.\n\nРабота в команде 4 разработчика + 1 тим-лид.\n\n- Настроен обмен задачами между Bitrix24 и системами заказчиков (Jira / Redmine). Двусторонний обмен: передаются задачи (описания, сроки и прочее), ворклоги (списанное рабочее время), комментарии и файлы приложений. Задача делалась двумя разработчиками - мной и тимлидом.\nФункционал позволяет разработчику работать только в Bitrix24, всю необходимую информацию заказчик видит в своей системе. Комментарии заказчика попадают в Bitrix24 и наоборот.\n\n- Разработка отчета по рабочему времени:\n* Отчет показывает, сколько времени отработано конкретным пользователем или отделом за конкретный промежуток времени. Есть возможность фильтрации по сотруднику, отделу и диапазону дат.\n* Данные формируются на основе времени, которое было списано пользователем в задачах. Встроенного функционала под реализацию данной задачи нет.\n* В таблице выводится итого за день, общее отработанное время конкретного сотрудника за период и сравнение его с планом. Общее отработанное время всех выбранных сотрудников и сравнение его с планом.\n* При нажатии на ячейку во всплывающем окне выводится список задач, на которые было списано время.\n\nСтек технологий: Bitrix24, работа с библиотекой BX и BX.Rest API. PHPUnit, Cypress.\n\nСоздано универсальное js-расширение к Bitrix24 на основе BX.UI.Tooltip. Расширение имеет параметр callback. Стандартный тултип Bitrix предназначен только для вывода информации о пользователе CRM. Созданный тултип универсальный и может использоваться для любых целей. Контент, который в нем отображается, формируется в callback-функции, которую указывает программист.\n\nОбщий стек технологий по всем проектам компании:\nОсновные технологии: Bitrix, ES6 JS (babel), symfony, шаблоны handlebars, Elasticsearch, Docker и composer.\nСреда разработки: GitLab. Автоматическая сборка и тестирование мердж-реквестов.\nСборка: grunt (ранее gulp, webpack), node.js, lint, eslint.\nИнструменты для работы: xdebug, console-jedi.\nДокументирование: phpDoc, jsDoc.\nПокрытие тестами: end-to-end тесты Cypress, бэкенд-тесты PHPUnit (юнит и интеграционные тесты).\nAjax-запросы на основе BX.Rest API и на основе Symfony REST API с использованием FOSRestBundle (проверка входящих параметров и прочее)."
+                    },
+                    {
+                        "id": "1883965318",
+                        "start": "2018-10-01",
+                        "end": "2019-06-01",
+                        "company": "Комус",
+                        "company_id": "5694",
+                        "industry": null,
+                        "industries": [
+                            {
+                                "id": "42.592",
+                                "name": "Канцтовары, расходные материалы (продвижение, оптовая торговля)"
+                            },
+                            {
+                                "id": "42.591",
+                                "name": "Канцтовары, расходные материалы (производство)"
+                            }
+                        ],
+                        "area": {
+                            "id": "113",
+                            "name": "Россия",
+                            "url": "https://api.hh.ru/areas/113"
+                        },
+                        "company_url": "http://www.komus.org",
+                        "employer": {
+                            "id": "5694",
+                            "name": "Комус",
+                            "url": "https://api.hh.ru/employers/5694",
+                            "alternate_url": "https://hh.ru/employer/5694",
+                            "logo_urls": {
+                                "240": "https://img.hhcdn.ru/employer-logo-round/2188312.jpeg",
+                                "90": "https://img.hhcdn.ru/employer-logo-round/2188311.jpeg",
+                                "original": "https://img.hhcdn.ru/employer-logo-original-round/2188310.jpeg"
+                            }
+                        },
+                        "position": "Ведущий разработчик",
+                        "description": "За время работы в компании было сделано:\n\n- Триггерные рассылки для повышения конверсии и возвращения \"остывших клиентов\". Также реализована возможность в Личном кабинете клиента отказаться от получения подобных рассылок.\n\n- Раздел профессиональной и бытовой химии с дифференциацией по бренду.\nВозможность ознакомиться с каталогом и приобрести нужные товары конкретного бренда.\n\nwww.komus-opt.ru/chem_distribution/\n\n- Новый раздел контактных данных с разделением по виду и региону деятельности заказчиков.\nРеализована интерактивная карта с возможностью выбора региона. По умолчанию регион выбран автоматически на основании данных заказчика.\nВ каждом регионе могут располагаться несколько офисов.\nУ каждого офиса выводятся реквизиты, контактные данные, схема проезда и прочие атрибуты.\n\nwww.komus-opt.ru/contacts/\n\nТехническая оптимизация\n1. Проведен глубокий рефакторинг кода. Внедрена автозагрузка классов, формализована структура кода. Оптимизированы и переработаны существующие решения для ускорения работы сайта и отсутствия дублирования кода (принцип DRY).\n\n2. Создана единая концепция кодовой базы, которая содержит лучшие практики в области Bitrix-разработки, собранные на основе опыта и анализа большого объема технической документации. Она унифицирует структуру кода, правила его написания, регламентирует поддерживаемые стандарты (PSR) и правила расположения ключевых скриптов, облегчает разработку сайта для большой группы разработчиков. Концепция была внедрена на нескольких сайтах отдела.\n\n3. Сайты подготовлены к внедрению GIT."
+                    },
+                    {
+                        "id": "1883965345",
+                        "start": "2015-08-01",
+                        "end": "2018-08-01",
+                        "company": "АВТОМАГ",
+                        "company_id": null,
+                        "industry": null,
+                        "industries": [
+                            {
+                                "id": "41.525",
+                                "name": "Интернет-магазин"
+                            },
+                            {
+                                "id": "15.547",
+                                "name": "Автозапчасти, шины (розничная торговля)"
+                            },
+                            {
+                                "id": "15.546",
+                                "name": "Автокомпоненты, запчасти, шины (продвижение, оптовая торговля)"
+                            }
+                        ],
+                        "area": null,
+                        "company_url": "http://www.amag.ru",
+                        "employer": null,
+                        "position": "Ведущий разработчик",
+                        "description": "Одновременное ведение множества крупных, средних и мелких проектов, доработки по задачам руководства.\n\nОбязанности:\n- Обеспечение функционирования внутренних процессов компании и внешних интеграций, связанных с интернет-магазином \n- Взаимодействие с подрядчиком: делегирование задач, контроль за выполнением, совместная реализация проектов\n- Самостоятельная реализация крупных проектов\n- Ежедневная оперативная работа\n- Организация работы всего отдела при приемке и тестировании критически важных обновлений (Новая версия сайта, Интеграция с \"Покупкой на Маркете\")\n- Частичное администрирование и мониторинг сервера при содействии внешнего подрядчика\n\nБолее подробный список работ:\n- Защита от Яндекс.Советника\n- Годовой график работ по мобильной версии сайта\n- Работы по сегменту запчастей для иномарок (дополнительный каталог в рамках одного сайта).\nДоработка функционала, реализация подборов запчастей, настройка выгрузки товаров на сайт.\n- Работы по интеграции с корпоративными информационными системами и 2 столами заказов\n- Размещение на торговых площадках (Яндекс.Маркет, Google Merchant, АВИТО, parts.auto.ru и др.). Ежедневный контроль статуса, получение обратной связи, достижение новых целей совместно с заместителем директора по электронной торговле.\n- Постоянный контроль и поддержание жизнеспособности сайта, инфраструктур и интеграций.\n- Реализация единовременных крупных проектов: Тач-стол для выставки ММАС 2018 (https://www.amag.ru/touch/)\n- Аккумулирование потребностей бизнеса и воплощение их в результативном коде.\n\nДостижения:\n- Возможность покупки для юр. лиц с системой мотивации к покупке. Перерасчет стоимости заказа по корпоративным ценам при достижении порога в 15 000 руб., генерация счетов, отправка счета на почту;\nАвтоматическая подстановка реквизитов организации по ИНН при оформлении заказа (на основе сервиса DaData).\n\n- Возможность оплаты картой онлайн (интернет-эквайринг) с автоматическим получением статуса оплаты на сайте. Менеджеры в списке заказов сразу видят, если заказ оплачен. Возможность частичного возврата при изменении состава оплаченного заказа.\nСистема подразумевает резервный канал оплаты. Если один из банков-эквайров не работает, оплата автоматически идет через другой.\n\n- Подборы запчастей к автомобилю через API TecDoc.\nАвтоматизированные подборы запчастей по марке и модели автомобиля: подбор фильтров, стеклоочистителей, масел и пр.\n\n- Реализована возможность пакетной загрузки акционных товаров на сайт (загрузка из файла) одним кликом:\n\t- автоматическое создание карточки товара,\n\t- автоматическое добавление товара в акцию,\n\t- установка акционной цены.\n\n- Автозагрузка объявлений на сервис AVITO.\n\n- Настройка регулярного резервного копирования.‎\n\n- Реализация функционала отложенных товаров.‎\n\nРеализованы также другие многие не менее важные задачи и доработки."
+                    },
+                    {
+                        "id": "1883965355",
+                        "start": "2014-01-01",
+                        "end": "2015-07-01",
+                        "company": "ОЛФО",
+                        "company_id": "1374926",
+                        "industry": null,
+                        "industries": [
+                            {
+                                "id": "8.486",
+                                "name": "Электронно-вычислительная, оптическая, контрольно-измерительная техника, радиоэлектроника, автоматика (продвижение, оптовая торговля)"
+                            },
+                            {
+                                "id": "8.484",
+                                "name": "Электронно-вычислительная, оптическая, контрольно-измерительная техника, радиоэлектроника, автоматика (производство)"
+                            },
+                            {
+                                "id": "41.521",
+                                "name": "Розничная сеть (электроника, бытовая техника)"
+                            },
+                            {
+                                "id": "41.519",
+                                "name": "Розничная сеть (мобильный ритейл)"
+                            },
+                            {
+                                "id": "41.525",
+                                "name": "Интернет-магазин"
+                            }
+                        ],
+                        "area": {
+                            "id": "1",
+                            "name": "Москва",
+                            "url": "https://api.hh.ru/areas/1"
+                        },
+                        "company_url": "http://all4.ru",
+                        "employer": {
+                            "id": "1116060",
+                            "name": "ОЛФО",
+                            "url": "https://api.hh.ru/employers/1116060",
+                            "alternate_url": "https://hh.ru/employer/1116060",
+                            "logo_urls": {
+                                "original": "https://img.hhcdn.ru/employer-logo-original-round/978328.png",
+                                "90": "https://img.hhcdn.ru/employer-logo-round/978329.png",
+                                "240": "https://img.hhcdn.ru/employer-logo-round/978330.png"
+                            }
+                        },
+                        "position": "Web-разработчик Bitrix",
+                        "description": "Обязанности:\r\n- Внедрение новых функций\r\n- Доработка существующего функционала\r\n- Управление хостингом, консоль Linux\r\n- Мониторинг, наладка и доработка обмена с 1С\r\n\r\nЗа время работы было сделано:\r\n- Сверстан и внедрен новый дизайн для сайта\r\n- Интегрирована оплата картой онлайн (интеграция с эквайринг-системой банка МКБ)\r\n- Интегрирован онлайн-кредит (интеграция с кредитной-системой банка Тинькофф «КупиВкредит»)\r\n- Добавлен функционал:\r\n\t- характеристики товаров\r\n\t- сравнение товаров\r\n\t- умный фильтр товаров\r\n\r\nРеализованы решения:\r\n\t- Автоматическая выгрузка товаров в Яндекс.Директ\r\n\t\t- Когда товар не в наличии - объявление автоматически приостаналивается\r\n\t\t- Когда появляется в наличии - опять включается\r\n\r\n\t- Мониторинг здоровья сайта в реальном времени на смартфоне с уведомлением о возникающих проблемах, в том числе\r\n                    - доступность сайта\r\n                    - время загрузки страницы\r\n                    - помечен ли сайт как вредоносный Яндексом и Гуглом\r\n                    - дата истечения лицензии CMS\r\n                    - доступность базы данных\r\n                    - целостность таблиц (+ фрагментация)\r\n                    - свободное место на хостинге\r\n                    - обмен с 1С\r\n                    - дата действия SSL-сертификата\r\n                    - баланс хостинга\r\n\t\r\n\t- Многорегиональность сайта — разные цены, баннеры, скидки для разных регионов. Отображение возможности доставки из Москвы, если товара в регионе нет.\r\n\r\n\t- Многоскладовость — отображение примерных сроков доставки в зависимости от того, на каком складе товар есть в наличии — на ближнем или на дальнем.\r\n\r\n\t- Ежедневное полное резервное копирование сайта (кроме статистики) в две несвязанные точки - помимо резервного копирования на хостинге.\r\n\r\n- Релизовано определение местоположения пользователя с привязкой к региону\r\n\r\n- Функция «Купить в один клик»\r\n\r\n- Функция подписки на товар"
+                    },
+                    {
+                        "id": "1883965357",
+                        "start": "2011-05-01",
+                        "end": "2015-07-01",
+                        "company": "Заказы",
+                        "company_id": null,
+                        "industry": null,
+                        "industries": [],
+                        "area": null,
+                        "company_url": null,
+                        "employer": null,
+                        "position": "web-разработчик",
+                        "description": "www.vivatfishing.ru - доработки галереи и проч.\r\n\r\nwww.protymen.ru/board/my/?edit=Y - связанные списки категорий на ajax\r\n\r\nwww.vgorodemoem.info - административный раздел для компаний-клиентов на ajax, ООП\r\n\r\nwww.moyakroxa.ru - функция \"уведомить о поступлении товара\", файловый архив в админ. разделе, переработка корзины и др.\r\n\r\nи другие"
+                    },
+                    {
+                        "id": "1883965367",
+                        "start": "2012-09-01",
+                        "end": "2013-12-01",
+                        "company": "Team.megaindex",
+                        "company_id": null,
+                        "industry": null,
+                        "industries": [],
+                        "area": null,
+                        "company_url": "http://team.megaindex.ru",
+                        "employer": null,
+                        "position": "web-разработчик",
+                        "description": "Обязанности: верстка, программирование, разработка с нуля (на основе CMS), натяжка верстки на движок и мелкие доработки\r\nОсновные проекты:\r\nGnite.ru............................Bitrix\r\nblokmodulstroy.ru............wordpress\r\ncronshtein.ru....................webasyst - доработки\r\ndelexgroup.ru..................altwebCMS\r\n........................................доработка административного раздела\r\nderdom.ru........................altwebCMS\r\neko-teh.com.....................Joomla\r\ngoodpereezd.ru...............altwebCMS\r\nkarek.ru............................MODx\r\nlr-star.ru............................altwebCMS\r\n.........................................реализация поиска по файлам csv\r\nparts-ip.ru.........................at-system\r\nrb-optika.ru......................UMI CMS\r\ntorgoborudovanie.ru........Joomla"
+                    },
+                    {
+                        "id": "1883965398",
+                        "start": "2012-03-01",
+                        "end": "2012-05-01",
+                        "company": "DVP Group",
+                        "company_id": null,
+                        "industry": null,
+                        "industries": [],
+                        "area": null,
+                        "company_url": "http://www.dvpgroup.ru/",
+                        "employer": null,
+                        "position": "web-разработчик Bitrix",
+                        "description": "- доработка компонентов\r\n- верстка и внедрение шаблона\r\n Сайт \"ФОРТ\" - http://universal.fort.ru"
+                    },
+                    {
+                        "id": "1883965405",
+                        "start": "2011-12-01",
+                        "end": "2012-02-01",
+                        "company": "студия Мята",
+                        "company_id": null,
+                        "industry": null,
+                        "industries": [],
+                        "area": null,
+                        "company_url": "http://mint-design.ru/",
+                        "employer": null,
+                        "position": "web-разработчик, самописная CMS",
+                        "description": "Обязанности: доработка публичных разделов сайтов и административных разделов. Внедрение новых решений. Верстка, дизайн.\r\n\r\nРешения:\r\n - Система учета продаж и присутствия продавца на точке (по дням). Статистика продаж (3 показателя) с выгрузкой в файл .xls. \r\n \r\n - Доработка системы, позволяющей работникам предлагать свои идеи (на корпоративном сайте).\r\n - Доработка системы рейтингов предложений и работников\r\n - Конечная оценка идеи\r\n\r\n- Другие мелкие задачи."
+                    },
+                    {
+                        "id": "1883965418",
+                        "start": "2011-10-01",
+                        "end": "2011-11-01",
+                        "company": "altasfera.ru",
+                        "company_id": null,
+                        "industry": null,
+                        "industries": [],
+                        "area": null,
+                        "company_url": "http://altasfera.ru",
+                        "employer": null,
+                        "position": "UI-разработчик, web-разработчик",
+                        "description": "Обязанности: доработка клиентской части проекта, создание и доработка разделов сайта, дизайн и верстка. Разработка на js - JQuery. Работа с ajax.\r\nИсправление ошибок и оптимизация верстки и js-скриптов.\r\n\r\nZend framework. Subversion.\r\n\r\nОсновные задачи / решения:\r\n - Форма обратной связи (ajax) - http://altasfera.ru/account/create - слева ссылка \"Обратная связь\"\r\n - Клиентская часть (дизайн, верстка, ajax-запрос)\r\n - Частично серверная часть - получение запроса, отправка уведомления о новом отзыве по email.\r\n - Справка (можно посмотреть только после регистрации на сайте) - http://altasfera.ru/info/rules\r\n - Верстка большого файла rtf в одну страницу справки с разделами\r\n - jQuery-код, управляющий отображением (работа основного меню, сворачивание/разворачивание подразделов)\r\n\r\nТакже были решены задачи:\r\n- Исправлено огромное количество багов с оформлением и работой сайта.\r\n- Налажена работа поиска (людей, активов, обязательств и т.д.)\r\n- И множество других мелких задач."
+                    },
+                    {
+                        "id": "1883965433",
+                        "start": "2011-05-01",
+                        "end": "2011-07-01",
+                        "company": "ggrpg.ru",
+                        "company_id": null,
+                        "industry": null,
+                        "industries": [],
+                        "area": null,
+                        "company_url": "http://ggrpg.ru",
+                        "employer": null,
+                        "position": "web-разработчик",
+                        "description": "Доработка разделов сайта, административной панели (CMS WebAsyst). Внедрение новых решений. Верстка, дизайн. Администрирование сайта.\r\n\r\nРешения:\r\n - Гео-таргетинг (автоматический выбор языка, подходящего посетителю)\r\n - Калькулятор стоимости заказа (доработка)\r\n - Обратный пересчет количества товара и скидки из конечной цены, вводимой пользователем (сложная математика).\r\n - Шкала скидок (программирование, дизайн)\r\n Здесь вы можете ознакомиться с результатом - http://ru.ggrpg.com/category/buy_isk/\r\n - Перевод сайта на английский, что включало в себя не только перевод статичных текстов, но и данных БД, а также рефакторинг сайта с учетом многоязычности. В частности был переделан скрипт страницы заказа (http://en.ggrpg.com/category/power_leveling/).\r\n\r\nТакже были решены задачи:\r\n- Налажена отправка писем.\r\n- Изменение статуса заказа в один клик (административная часть).\r\n- В некоторые выпадающие списки на сайте была добавлена функция автодополнения."
+                    },
+                    {
+                        "id": "1883965435",
+                        "start": "2009-11-01",
+                        "end": "2010-04-01",
+                        "company": "Государственный университет управления",
+                        "company_id": "1374484",
+                        "industry": {
+                            "id": "39",
+                            "name": "Образовательные учреждения"
+                        },
+                        "industries": [
+                            {
+                                "id": "39.442",
+                                "name": "Вуз, ссуз колледж, ПТУ"
+                            }
+                        ],
+                        "area": {
+                            "id": "1",
+                            "name": "Москва",
+                            "url": "https://api.hh.ru/areas/1"
+                        },
+                        "company_url": null,
+                        "employer": null,
+                        "position": "Ведущий программист",
+                        "description": "Ведущий программист отдела информационных технологий отдела\nинформационно-технологических разработок центра новых\nинформационных технологий"
+                    }
+                ],
+                "language": [
+                    {
+                        "id": "rus",
+                        "name": "Русский",
+                        "level": {
+                            "id": "l1",
+                            "name": "Родной"
+                        }
+                    },
+                    {
+                        "id": "eng",
+                        "name": "Английский",
+                        "level": {
+                            "id": "c1",
+                            "name": "C1 — Продвинутый"
+                        }
+                    }
+                ],
+                "metro": null,
+                "recommendation": [],
+                "relocation": {
+                    "type": {
+                        "id": "relocation_possible",
+                        "name": "могу переехать"
+                    },
+                    "area": [
+                        {
+                            "id": "1",
+                            "name": "Москва",
+                            "url": "https://api.hh.ru/areas/1"
+                        },
+                        {
+                            "id": "2",
+                            "name": "Санкт-Петербург",
+                            "url": "https://api.hh.ru/areas/2"
+                        }
+                    ],
+                    "district": []
+                },
+                "schedule": {
+                    "id": "fullDay",
+                    "name": "Полный день"
+                },
+                "schedules": [
+                    {
+                        "id": "fullDay",
+                        "name": "Полный день"
+                    }
+                ],
+                "site": [],
+                "travel_time": {
+                    "id": "any",
+                    "name": "Не имеет значения"
+                },
+                "business_trip_readiness": {
+                    "id": "never",
+                    "name": "Не готов к командировкам"
+                },
+                "paid_services": [],
+                "portfolio": [],
+                "skill_set": [
+                    "Agile Project Management",
+                    "E-Commerce",
+                    "Обучение персонала",
+                    "Управление командой",
+                    "Проведение презентаций",
+                    "Оптимизация бизнес-процессов",
+                    "Делегирование, контроль, тестирование, приемка",
+                    "Управление техническим долгом",
+                    "Написание технической документации",
+                    "Написание регламентов разработки ПО",
+                    "Декомпозиция задач",
+                    "CI/CD",
+                    "Golang",
+                    "Управление ожиданиями",
+                    "TOGAF",
+                    "ArchiMate",
+                    "Фасилитация",
+                    "SAFe",
+                    "Lean-Agile",
+                    "Формирование ART",
+                    "Корпоративная архитектура",
+                    "Корпоративное хранилище",
+                    "Эффективность экосистемы",
+                    "SSDLC",
+                    "DevSecOps",
+                    "Domain Driven Design",
+                    "Чистая архитектура",
+                    "Архитектор ПО",
+                    "UX",
+                    "Spring Framework"
+                ],
+                "favorited": false,
+                "has_vehicle": false,
+                "driver_license_types": [],
+                "contact_view_status": "FULL",
+                "view_without_contacts_reason": null,
+                "contact": [
+                    {
+                        "value": {
+                            "country": "7",
+                            "city": "985",
+                            "number": "2625374",
+                            "formatted": "+7 985 262-53-74"
+                        },
+                        "type": {
+                            "id": "cell",
+                            "name": "Мобильный телефон"
+                        },
+                        "preferred": false,
+                        "comment": null,
+                        "contact_value": "+7 985 262-53-74",
+                        "kind": "phone",
+                        "need_verification": false,
+                        "verified": true
+                    },
+                    {
+                        "type": {
+                            "id": "email",
+                            "name": "Эл. почта"
+                        },
+                        "value": "murrometz@yandex.ru",
+                        "preferred": true,
+                        "contact_value": "murrometz@yandex.ru",
+                        "kind": "email"
+                    }
+                ],
+                "specialization": [],
+                "professional_roles": [
+                    {
+                        "id": "36",
+                        "name": "Директор по информационным технологиям (CIO)"
+                    }
+                ],
+                "tags": [],
+                "complaint_status": {
+                    "applicant_topics_are_hidden": false
+                }
+            }
+        }
+    ]
+}

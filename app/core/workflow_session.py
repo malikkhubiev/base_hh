@@ -5,7 +5,6 @@ import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from threading import Lock
 
 from app.core.settings import settings
 
@@ -13,9 +12,6 @@ logger = logging.getLogger(__name__)
 
 # HH area_id: 113 — Россия, 16 — Беларусь
 DEFAULT_AREA_IDS: list[int] = [113, 16]
-
-_lock = Lock()
-_sessions: dict[str, WorkflowSession] = {}
 
 
 @dataclass
@@ -29,7 +25,10 @@ class WorkflowSession:
 
 
 def _postgres_dsn() -> str:
-    return (settings.database_url or "").strip()
+    dsn = (settings.database_url or "").strip()
+    if not dsn:
+        raise RuntimeError("DATABASE_URL is not configured (set DB_* env vars or DATABASE_URL)")
+    return dsn
 
 
 def _connect():
@@ -39,10 +38,7 @@ def _connect():
 
 
 def ensure_session_schema() -> None:
-    """Создаёт таблицу workflow_sessions при наличии DATABASE_URL."""
-    dsn = _postgres_dsn()
-    if not dsn:
-        return
+    """Создаёт таблицу workflow_sessions."""
     with _connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -90,9 +86,6 @@ def _row_to_session(row: tuple) -> WorkflowSession:
 
 
 def _save_session_pg(session: WorkflowSession) -> None:
-    dsn = _postgres_dsn()
-    if not dsn:
-        return
     with _connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -112,9 +105,6 @@ def _save_session_pg(session: WorkflowSession) -> None:
 
 
 def _load_session_pg(session_id: str) -> WorkflowSession | None:
-    dsn = _postgres_dsn()
-    if not dsn:
-        return None
     with _connect() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -145,12 +135,11 @@ def create_session(
         candidates_limit=int(candidates_limit),
         candidate_ids=[str(x) for x in candidate_ids if str(x)],
     )
-    with _lock:
-        _sessions[session.session_id] = session
     try:
         _save_session_pg(session)
     except Exception:
         logger.exception("Failed to persist workflow session id=%s", session.session_id)
+        raise
     return session
 
 
@@ -158,19 +147,11 @@ def get_session(session_id: str) -> WorkflowSession | None:
     sid = str(session_id or "")
     if not sid:
         return None
-    with _lock:
-        cached = _sessions.get(sid)
-    if cached is not None:
-        return cached
     try:
-        loaded = _load_session_pg(sid)
+        return _load_session_pg(sid)
     except Exception:
         logger.exception("Failed to load workflow session id=%s", sid)
         return None
-    if loaded is not None:
-        with _lock:
-            _sessions[sid] = loaded
-    return loaded
 
 
 def require_session(session_id: str) -> WorkflowSession:

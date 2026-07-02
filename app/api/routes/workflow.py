@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, PlainTextResponse
 
 from app.core.resume_pdf_store import resume_pdf_exists, resume_pdf_path
 from app.core.resume_store import persist_scored_resume, persist_resume, get_resume_store
+from app.core.traffic_light_store import get_traffic_light_store, persist_traffic_light_batch
 from app.core.settings import settings
 from app.core.tracing import trace_step
 from app.core.workflow_session import create_session, require_session
@@ -27,7 +28,9 @@ from app.models.schemas import (
     TrafficLightResultItem,
     ContactsRequest,
     ContactsResponse,
-    CandidateContact,
+    AddedCandidateItem,
+    TrafficLightPublic,
+    TrafficLightRequirement,
 )
 from app.services.hh_search import HHSearchService
 from app.services.prompts import PromptService
@@ -740,15 +743,46 @@ async def traffic_light_from_candidates(payload: TrafficLightFromCandidatesReque
         reverse=True,
     )
     items = [_traffic_light_item_from_candidate(tl) for tl in traffic_light_candidates]
+    persist_traffic_light_batch(
+        session_id=session.session_id,
+        items=[
+            {
+                "id": it.id,
+                "candidate_name": it.candidate_name,
+                "title": it.title,
+                "location": it.location,
+                "color_score_percent": it.color_score_percent,
+                "requirements": [r.model_dump() for r in (it.requirements or [])],
+            }
+            for it in items
+        ],
+    )
     trace_step(_log, "workflow", "traffic_light_from_candidates.done", n=len(items))
 
     return TrafficLightFromCandidatesResponse(session_id=session.session_id, candidates=items)  # type: ignore[arg-type]
+
+
+def _traffic_light_public_from_record(record) -> TrafficLightPublic:
+    requirements = [
+        TrafficLightRequirement(**req)
+        for req in (record.requirements or [])
+        if isinstance(req, dict)
+    ]
+    return TrafficLightPublic(
+        id=record.resume_id,
+        candidate_name=record.candidate_name,
+        title=record.title,
+        location=record.location,
+        color_score_percent=int(record.color_score_percent or 0),
+        requirements=requirements,
+    )
 
 
 @router.post("/contacts", response_model=ContactsResponse, response_model_exclude_none=True)
 async def open_contacts(payload: ContactsRequest):
     """
     Этап 3: платное открытие контактов для candidate_ids из сессии.
+    Возвращает светофор (без prompt/raw) и полное резюме HH с контактами.
     """
     trace_step(
         _log,
@@ -765,30 +799,35 @@ async def open_contacts(payload: ContactsRequest):
     ids = [str(x) for x in payload.candidate_ids]
     _validate_session_candidate_ids(session, ids)
 
+    tl_by_id = get_traffic_light_store().get_for_session(session_id=session.session_id, resume_ids=ids)
+    missing_tl = [cid for cid in ids if cid not in tl_by_id]
+    if missing_tl:
+        raise HTTPException(
+            status_code=400,
+            detail=f"traffic light not found for candidate_ids (run /api/traffic_light first): {missing_tl[:5]}",
+        )
+
     hh = HHSearchService(token_url=settings.hh_token_url, token_source=settings.token_source)
     import asyncio
 
     semaphore = asyncio.Semaphore(6)
 
-    async def process_one(cid: str) -> CandidateContact:
+    async def process_one(cid: str) -> AddedCandidateItem:
         async with semaphore:
-            resume_json = _load_resume_json(cid) or {}
-            name = _candidate_name(resume_json) or cid or "-"
+            tl_public = _traffic_light_public_from_record(tl_by_id[cid])
             if not cid:
-                return CandidateContact(id="", candidate_name=name, error="missing id")
+                return AddedCandidateItem(
+                    traffic_light=TrafficLightPublic(id="", candidate_name=None),
+                    error="missing id",
+                )
             resume_data = await asyncio.to_thread(hh.hh.get_resume_by_id, cid, with_contacts=True)
             if not isinstance(resume_data, dict) or not resume_data:
-                return CandidateContact(id=cid, candidate_name=name, error="failed to open contacts")
-            phone, email, raw = _extract_contacts_from_resume(resume_data)
-            return CandidateContact(
-                id=cid,
-                candidate_name=name,
-                phone=phone,
-                email=email,
-                contacts=raw,
-            )
+                err = hh.hh.last_contact_error or "failed to open contacts"
+                return AddedCandidateItem(traffic_light=tl_public, error=err)
+            persist_resume(resume_id=cid, resume_json=resume_data)
+            return AddedCandidateItem(traffic_light=tl_public, resume_json=resume_data)
 
     results = await asyncio.gather(*(process_one(cid) for cid in ids))
     trace_step(_log, "workflow", "open_contacts.done", count=len(results))
-    return ContactsResponse(session_id=session.session_id, contacts=list(results))
+    return ContactsResponse(session_id=session.session_id, candidates=list(results))
 

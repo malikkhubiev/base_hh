@@ -195,12 +195,23 @@ class TrafficLightFromCandidatesResponse(BaseModel):
     candidates: list[TrafficLightResultItem] = Field(default_factory=list)
 
 
-class CandidateContact(BaseModel):
+class TrafficLightPublic(BaseModel):
+    """Светофор для внешнего сервиса (без prompt и llm_raw)."""
+
     id: str
-    candidate_name: str
-    phone: str | None = None
-    email: str | None = None
-    contacts: list[dict[str, Any]] = Field(default_factory=list, description="Сырой массив contact[] из HH")
+    candidate_name: str | None = None
+    title: str | None = None
+    location: str | None = None
+    color_score_percent: int = Field(ge=0, le=100, default=0)
+    requirements: list[TrafficLightRequirement] = Field(default_factory=list)
+
+
+class AddedCandidateItem(BaseModel):
+    traffic_light: TrafficLightPublic
+    resume_json: dict[str, Any] | None = Field(
+        default=None,
+        description="Полный JSON резюме HH после платного открытия контактов.",
+    )
     error: str | None = None
 
 
@@ -219,5 +230,5 @@ class ContactsRequest(BaseModel):
 
 class ContactsResponse(BaseModel):
     session_id: str
-    contacts: list[CandidateContact]
+    candidates: list[AddedCandidateItem] = Field(default_factory=list)
 

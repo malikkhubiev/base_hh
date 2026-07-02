@@ -65,6 +65,8 @@ class PostgresResumeStore:
                 return None
 
     def save_resume_json(self, *, resume_id: str, resume_json: dict[str, Any]) -> None:
+        from psycopg.types.json import Json
+
         fetched_at = datetime.now(timezone.utc)
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -76,36 +78,21 @@ class PostgresResumeStore:
                       fetched_at=excluded.fetched_at,
                       resume_json=excluded.resume_json
                     """,
-                    (resume_id, fetched_at, resume_json),
+                    (resume_id, fetched_at, Json(resume_json)),
                 )
 
 
-class InMemoryResumeStore:
-    """Кэш резюме в памяти процесса, если DATABASE_URL не задан."""
-
-    def __init__(self) -> None:
-        self._data: dict[str, dict[str, Any]] = {}
-
-    def ensure_schema(self) -> None:
-        return None
-
-    def get_resume_json(self, *, resume_id: str) -> dict[str, Any] | None:
-        data = self._data.get(str(resume_id))
-        return data if isinstance(data, dict) and data else None
-
-    def save_resume_json(self, *, resume_id: str, resume_json: dict[str, Any]) -> None:
-        if resume_id and isinstance(resume_json, dict) and resume_json:
-            self._data[str(resume_id)] = resume_json
-
-
-_memory_resume_store = InMemoryResumeStore()
+_resume_store: PostgresResumeStore | None = None
 
 
 def get_resume_store() -> ResumeStore:
+    global _resume_store
     dsn = (settings.database_url or "").strip()
     if not dsn:
-        return _memory_resume_store
-    return PostgresResumeStore(config=PostgresResumeStoreConfig(dsn=dsn))
+        raise RuntimeError("DATABASE_URL is not configured (set DB_* env vars or DATABASE_URL)")
+    if _resume_store is None or _resume_store._dsn != dsn:
+        _resume_store = PostgresResumeStore(config=PostgresResumeStoreConfig(dsn=dsn))
+    return _resume_store
 
 
 def persist_resume(*, resume_id: str, resume_json: dict[str, Any]) -> None:
